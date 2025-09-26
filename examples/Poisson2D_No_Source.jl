@@ -8,8 +8,8 @@ model = create_model(Domain, Divisions)
 dm = Influence_Domains(model, Domain, Divisions, dmax)
 ngpts = 3
 Ω = BackgroundIntegration(model, "Domain", ngpts)
-Γ1 = BackgroundIntegration(model, "left", ngpts)
-Γ2 = BackgroundIntegration(model, "bottom", ngpts)
+Γ1 = BackgroundIntegration(model, "Left", ngpts)
+Γ2 = BackgroundIntegration(model, "Bottom", ngpts)
 Measures = [Ω, Γ1, Γ2]
 Shape_Functions = EFG_Functions(model, Measures, dm)
 K = AssembleEFG(model, Ω, Shape_Functions, "Laplacian"; prop=1)
