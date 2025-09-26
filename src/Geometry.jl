@@ -247,5 +247,5 @@ function get_entity(model::EFGmodel, tag::String)
             return subdict[tag]
         end
     end
-    error("Tag '$tag' no encontrado en ninguna entidad del modelo")
+    error("Tag '$tag' at any entity of the model.")
 end
