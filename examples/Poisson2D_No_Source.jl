@@ -18,15 +18,7 @@ Kp = AssembleEFG(model, Γd, Shape_Functions, "Mass"; prop=1000)
 Q = AssembleEFG(model, Γ2, Shape_Functions, "Load"; prop=5000) # Non Null Dirichlet BC T=5
 T = (K + Kp) \ Q;
 #Cálculo de Campo en puntos de Gauss (Pronto una función para esto en cualquier Tag donde haya Shape_Functions calculadas)
-ngauss = size(Ω[2], 1)
-PHI, DPHI, DOM = Shape_Functions[:domain]["Domain"]
-Tdom = Vector{Vector{Float64}}(undef, ngauss)
-Tgauss = Vector{Float64}(undef, ngauss)
-@inbounds for i in 1:ngauss
-    Tdom[i] = T[DOM[i]]
-end
-@inbounds for i in 1:ngauss
-    Tgauss[i] = dot(PHI[i], Tdom[i])
-end
-gs = Ω[2]
+Th=EFG_Field(T, Shape_Functions, Ω)
+Tgauss=Get_Point_Values(Th)
+∇Th=∇(Th)
 scatter(gs[:,1], gs[:,2], zcolor=Tgauss, color=:jet, marker=:square, markersize=1,markerstrokecolor=:transparent,markerstrokewidth=0, xlabel="X", ylabel="Y", title="Temperature Colormap")
