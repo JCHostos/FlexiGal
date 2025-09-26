@@ -1,14 +1,11 @@
 function generate_cartesian_mesh(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where D
-    @assert D == 2 || D == 3 "Solo 2D o 3D soportados"
+    @assert D == 2 || D == 3 "Only 2D and 3D meshes are supported"
 
-    # Número de nodos y celdas
     nnodes = prod(d + 1 for d in divisions)
     ncells = prod(divisions)
 
-    # Coordenadas de nodos
     x = zeros(Float64, nnodes, D)
 
-    # Generar grid
     if D == 2
         Nx, Ny = divisions
         Lx, Ly = domain
@@ -18,7 +15,6 @@ function generate_cartesian_mesh(domain::NTuple{D,Float64}, divisions::NTuple{D,
                 x[idx, :] = [(Lx / Nx) * i, (Ly / Ny) * j]
             end
         end
-        # Conectividad
         conn = zeros(Int, ncells, 4)
         for j in 0:(Ny-1)
             for i in 0:(Nx-1)
@@ -41,7 +37,6 @@ function generate_cartesian_mesh(domain::NTuple{D,Float64}, divisions::NTuple{D,
                 end
             end
         end
-        # Conectividad
         conn = zeros(Int, ncells, 8)
         for k in 0:(Nz-1)
             for j in 0:(Ny-1)
@@ -101,7 +96,6 @@ function matching_cols_dict(A::Matrix{Int}, B::Matrix{Int})
 end
 
 function conn_external(conn::Matrix{Int}, connint::Matrix{Int})
-    # Convertir filas internas en diccionario para lookup rápido
     nrows=size(conn,2)
     dict_int = Dict{NTuple{nrows,Int},Bool}()
     conn_sorted=sort(conn, dims=2)
@@ -110,7 +104,6 @@ function conn_external(conn::Matrix{Int}, connint::Matrix{Int})
         dict_int[Tuple(r)] = true
     end
 
-    # Buscar filas externas
     nrows = size(conn_sorted,1)
     idx_ext = Vector{Int}(undef, nrows)
     count = 0
@@ -126,10 +119,9 @@ end
 
 function FindEdgesQuad(conn::Matrix{Int})
     nelems, _ = size(conn)
-    all = Array{Int,2}(undef, nelems*4, 2)  # preasignamos tamaño
+    all = Array{Int,2}(undef, nelems*4, 2)
     row = 1
     @inbounds for e in 1:nelems
-        # 4 aristas de cada elemento
         all[row, :] = conn[e, 1:2];   row += 1
         all[row, :] = conn[e, 2:3];   row += 1
         all[row, :] = conn[e, 3:4];   row += 1
@@ -141,7 +133,6 @@ function FindEdgesQuad(conn::Matrix{Int})
     index = matching_cols_dict(m, all_sorted)
     connedges = all[index, :]
 
-    # Aristas internas
     mask = trues(size(all,1))
     mask[index] .= false
     connintedges = all[mask, :]
@@ -156,10 +147,9 @@ end
 
 function FindFacesandEdgesHexa(conn::Matrix{Int})
     nelems, _ = size(conn)
-    all = Array{Int,2}(undef, nelems*6, 4)  # preasignamos tamaño
+    all = Array{Int,2}(undef, nelems*6, 4)
     row = 1
     @inbounds for e in 1:nelems
-        # 6 Caras de cada elemento
         all[row, :] = conn[e, [1,4,8,5]];   row += 1
         all[row, :] = conn[e, [2,3,7,6]];   row += 1
         all[row, :] = conn[e, [1,2,6,5]];   row += 1
@@ -173,7 +163,6 @@ function FindFacesandEdgesHexa(conn::Matrix{Int})
     index = matching_cols_dict(m, all_sorted)
     connfaces = all[index, :]
 
-    # Caras internas
     mask = trues(size(all,1))
     mask[index] .= false
     connintfaces = all[mask, :]
@@ -182,14 +171,11 @@ function FindFacesandEdgesHexa(conn::Matrix{Int})
     index_int = matching_cols_dict(m_int, connintfaces_sorted)
     connintfaces = connintfaces[index_int, :]
 
-    # Caras externas
     connextfaces = conn_external(connfaces, connintfaces)
-    # Encontrar aristas
     nfaces = size(connintfaces, 1)
-    all = Array{Int,2}(undef, nfaces*4, 2)  # preasignamos tamaño
+    all = Array{Int,2}(undef, nfaces*4, 2)
     row = 1
     @inbounds for e in 1:nfaces
-        # 4 Aristas de cada cara
         all[row, :] = connintfaces[e, [1,2]];   row += 1
         all[row, :] = connintfaces[e, [2,3]];   row += 1
         all[row, :] = connintfaces[e, [3,4]];   row += 1
@@ -200,7 +186,6 @@ function FindFacesandEdgesHexa(conn::Matrix{Int})
     m = unique(all_sorted, dims=1)
     index = matching_cols_dict(m, all_sorted)
     connedges = all[index, :]
-    # Aristas internas
     mask = trues(size(all,1))
     mask[index] .= false
     connintedges = all[mask, :]
@@ -208,12 +193,10 @@ function FindFacesandEdgesHexa(conn::Matrix{Int})
     m_int = unique(connintedges_sorted, dims=1)
     index_int = matching_cols_dict(m_int, connintedges_sorted)
     connintedges = connintedges[index_int, :]
-    # Encontrar aristas
     nfaces = size(connfaces, 1)
     all = Array{Int,2}(undef, nfaces*4, 2)  # preasignamos tamaño
     row = 1
     @inbounds for e in 1:nfaces
-        # 4 Aristas de cada cara
         all[row, :] = connfaces[e, [1,2]];   row += 1
         all[row, :] = connfaces[e, [2,3]];   row += 1
         all[row, :] = connfaces[e, [3,4]];   row += 1
@@ -224,7 +207,6 @@ function FindFacesandEdgesHexa(conn::Matrix{Int})
     m = unique(all_sorted, dims=1)
     index = matching_cols_dict(m, all_sorted)
     connedges = all[index, :]
-    # Aristas externas
     connextedges = conn_external(connedges, connintedges)
     return connintfaces, connextfaces, connintedges, connextedges
 end
