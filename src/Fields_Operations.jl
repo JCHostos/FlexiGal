@@ -31,7 +31,7 @@ function EFG_Field(field_nodal::Vector{Float64},
     end
     return EFGFunction(Tdom, Ts, PHI, DPHI, tag, gs)
 end
-Get_Point_Values(f::EFGFunction) = f.Tgauss
+Get_Point_Values(f::EFGFunction) = f.Ts
 function ∇(f::EFGFunction)
     ngauss = length(f.DPHI)
     grads  = Vector{Vector{Float64}}(undef, ngauss)
