@@ -1,0 +1,252 @@
+include("Meshing.jl")
+# ------------------------------
+# Structs para el modelo FEM
+# ------------------------------
+struct EFGmodel
+    x::Matrix{Float64}                               # nodos
+    conn::Matrix{Int}                                # conectividad
+    entities::Dict{Symbol,Dict{String,Union{Int,Matrix{Int}}}} # entidades con tags
+    dim::Int
+    ncells::Int
+    nnodes::Int
+end
+
+# ------------------------------
+# Función para crear el modelo FEM 2D con 9 tags
+# ------------------------------
+function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where D
+    @assert D == 2 || D == 3 "Solo 2D o 3D soportados"
+
+    # Generar nodos y conectividad
+    x, conn, ncells, nnodes = generate_cartesian_mesh(domain, divisions)
+    tol = 1e-15
+    entities = Dict{Symbol,Dict{String,Union{Int,Matrix{Int}}}}()
+    if D == 2
+        Nx, Ny = divisions
+        Lx, Ly = domain
+
+        # Encontrar aristas internas y externas
+        connintedges, connextedges = FindEdgesQuad(conn)
+        # ------------------------------
+        # Inicializar entities
+        # ------------------------------
+        corner1 = 1
+        corner2 = Nx + 1
+        corner3 = (Nx + 1) * (Ny) + 1
+        corner4 = (Nx + 1) * (Ny + 1)
+        # 1) Nodos de las esquinas
+        corner_nodes = Dict(
+            "corner1" => corner1,
+            "corner2" => corner2,
+            "corner3" => corner3,
+            "corner4" => corner4
+        )
+        entities[:nodes] = corner_nodes
+        # 2) Aristas externas con tags individuales
+        # Para esto necesitamos identificar edges por posición
+        left_edges = Matrix{Int}(undef, Ny, 2)
+        right_edges = Matrix{Int}(undef, Ny, 2)
+        bottom_edges = Matrix{Int}(undef, Nx, 2)
+        top_edges = Matrix{Int}(undef, Nx, 2)
+        li = ri = bi = ti = 1
+        nedges = size(connextedges, 1)
+        @inbounds for e in 1:nedges
+            n1, n2 = connextedges[e, 1], connextedges[e, 2]
+            xm = (x[n1, 1] + x[n2, 1]) * 0.5
+            ym = (x[n1, 2] + x[n2, 2]) * 0.5
+            if xm < tol
+                left_edges[li, :] .= (n1, n2)
+                li += 1
+            elseif xm > Lx - tol
+                right_edges[ri, :] .= (n1, n2)
+                ri += 1
+            elseif ym < tol
+                bottom_edges[bi, :] .= (n1, n2)
+                bi += 1
+            elseif ym > Ly - tol
+                top_edges[ti, :] .= (n1, n2)
+                ti += 1
+            end
+        end
+        ext_edges = Dict(
+            "left" => left_edges,
+            "right" => right_edges,
+            "bottom" => bottom_edges,
+            "top" => top_edges,
+            "boundary_edges" => connextedges
+        )
+        entities[:ext_edges] = ext_edges
+        int_edges = Dict("internal_edges" => connintedges)
+        entities[:int_edges] = int_edges
+        # 3) Caras internas (Celdas)
+        faces_dict = Dict("Domain" => conn)
+        entities[:faces] = faces_dict
+    elseif D == 3
+        Nx, Ny, Nz = divisions
+        Lx, Ly, Lz = domain
+        # Encontrar caras y aristas internas y externas
+        connintfaces, connextfaces, connintedges, connextedges = FindFacesandEdgesHexa(conn)
+        # ------------------------------
+        # Inicializar entities
+        # ------------------------------
+        corner1 = 1
+        corner2 = Nx + 1
+        corner3 = (Nx + 1) * (Ny) + 1
+        corner4 = (Nx + 1) * (Ny + 1)
+        corner5 = (Nx + 1) * (Ny + 1) * (Nz) + 1
+        corner6 = (Nx + 1) * (Ny + 1) * (Nz) + (Nx + 1)
+        corner7 = (Nx + 1) * (Ny + 1) * (Nz) + (Nx + 1) * (Ny) + 1
+        corner8 = (Nx + 1) * (Ny + 1) * (Nz + 1)
+        # 1) Nodos de las esquinas
+        corner_nodes = Dict(
+            "corner1" => corner1,
+            "corner2" => corner2,
+            "corner3" => corner3,
+            "corner4" => corner4,
+            "corner5" => corner5,
+            "corner6" => corner6,
+            "corner7" => corner7,
+            "corner8" => corner8
+        )
+        entities[:nodes] = corner_nodes
+        # 2) Caras externas con tags individuales
+        left_faces = Matrix{Int}(undef, Nz * Ny, 4)
+        right_faces = Matrix{Int}(undef, Nz * Ny, 4)
+        bottom_faces = Matrix{Int}(undef, Nx * Ny, 4)
+        top_faces = Matrix{Int}(undef, Nx * Ny, 4)
+        back_faces = Matrix{Int}(undef, Nx * Nz, 4)
+        front_faces = Matrix{Int}(undef, Nx * Nz, 4)
+        li = ri = bi = ti = bai = fi = 1
+        nfaces = size(connextfaces, 1)
+        @inbounds for e in 1:nfaces
+            n1, n2, n3, n4 = connextfaces[e, 1], connextfaces[e, 2], connextfaces[e, 3], connextfaces[e, 4]
+            xm = (x[n1, 1] + x[n2, 1] + x[n3, 1] + x[n4, 1]) * 0.25
+            ym = (x[n1, 2] + x[n2, 2] + x[n3, 2] + x[n4, 2]) * 0.25
+            zm = (x[n1, 3] + x[n2, 3] + x[n3, 3] + x[n4, 3]) * 0.25
+            if xm < tol
+                left_faces[li, :] .= (n1, n2, n3, n4)
+                li += 1
+            elseif xm > Lx - tol
+                right_faces[ri, :] .= (n1, n2, n3, n4)
+                ri += 1
+            elseif zm < tol
+                bottom_faces[bi, :] .= (n1, n2, n3, n4)
+                bi += 1
+            elseif zm > Lz - tol
+                top_faces[ti, :] .= (n1, n2, n3, n4)
+                ti += 1
+            elseif ym < tol
+                back_faces[bai, :] .= (n1, n2, n3, n4)
+                bai += 1
+            elseif ym > Ly - tol
+                front_faces[fi, :] .= (n1, n2, n3, n4)
+                fi += 1
+            end
+        end
+        ext_faces = Dict(
+            "left" => left_faces,
+            "right" => right_faces,
+            "bottom" => bottom_faces,
+            "top" => top_faces,
+            "back" => back_faces,
+            "front" => front_faces,
+            "boundary_faces" => connextfaces
+        )
+        entities[:ext_faces] = ext_faces
+        int_faces = Dict("internal_faces" => connintfaces)
+        entities[:int_faces] = int_faces
+        # 2) Aristas externas con tags individuales
+        nedges=size(connextedges, 1)
+        leftbottom_edges = Matrix{Int}(undef, Ny, 2)
+        rightbottom_edges = Matrix{Int}(undef, Ny, 2)
+        lefttop_edges = Matrix{Int}(undef, Ny, 2)
+        righttop_edges = Matrix{Int}(undef, Ny, 2)
+        leftback_edges = Matrix{Int}(undef, Nz, 2)
+        rightback_edges = Matrix{Int}(undef, Nz, 2)
+        leftfront_edges = Matrix{Int}(undef, Nz, 2)
+        rightfront_edges = Matrix{Int}(undef, Nz, 2)
+        bottomback_edges = Matrix{Int}(undef, Nx, 2)
+        bottomfront_edges = Matrix{Int}(undef, Nx, 2)
+        toptback_edges = Matrix{Int}(undef, Nx, 2)
+        topfront_edges = Matrix{Int}(undef, Nx, 2)
+        lbi = rbi = lti = rti = lbai = rbai = lfi = rfi = bbai = bfi = tbai = tfi = 1
+        @inbounds for e in 1:nedges
+            n1, n2 = connextedges[e, 1], connextedges[e, 2]
+            xm = (x[n1, 1] + x[n2, 1]) * 0.5
+            ym = (x[n1, 2] + x[n2, 2]) * 0.5
+            zm = (x[n1, 3] + x[n2, 3]) * 0.5
+            if xm < tol && zm < tol
+                leftbottom_edges[lbi, :] .= (n1, n2)
+                lbi += 1
+            elseif xm > Lx - tol && zm < tol
+                rightbottom_edges[rbi, :] .= (n1, n2)
+                rbi += 1
+            elseif xm < tol && zm > Lz - tol
+                lefttop_edges[lti, :] .= (n1, n2)
+                lti += 1
+            elseif xm > Lx - tol && zm > Lz - tol
+                righttop_edges[rti, :] .= (n1, n2)
+                rti += 1
+            elseif xm < tol && ym < tol
+                leftback_edges[lbai, :] .= (n1, n2)
+                lbai += 1
+            elseif xm > Lx - tol && ym < tol
+                rightback_edges[rbai, :] .= (n1, n2)
+                rbai += 1
+            elseif xm < tol && ym > Ly - tol
+                leftfront_edges[lfi, :] .= (n1, n2)
+                lfi += 1
+            elseif xm > Lx - tol && ym > Ly - tol
+                rightfront_edges[rfi, :] .= (n1, n2)
+                rfi += 1
+            elseif zm < tol && ym < tol
+                bottomback_edges[bbai, :] .= (n1, n2)
+                bbai += 1
+            elseif zm < tol && ym > Ly - tol
+                bottomfront_edges[bfi, :] .= (n1, n2)
+                bfi += 1
+            elseif zm > Lz - tol && ym < tol
+                toptback_edges[tbai, :] .= (n1, n2)
+                tbai += 1
+            elseif zm > Lz - tol && ym > Ly - tol
+                topfront_edges[tfi, :] .= (n1, n2)
+                tfi += 1    
+            end
+        end
+        ext_edges = Dict(
+            "leftbottom" => leftbottom_edges,
+            "rightbottom" => rightbottom_edges,
+            "lefttop" => lefttop_edges,
+            "righttop" => righttop_edges,
+            "leftback" => leftback_edges,
+            "rightback" => rightback_edges,
+            "leftfront" => leftfront_edges,
+            "rightfront" => rightfront_edges,
+            "bottomback" => bottomback_edges,
+            "bottomfront" => bottomfront_edges,
+            "topback" => toptback_edges,
+            "topfront" => topfront_edges,
+            "boundary_edges" => connextedges
+        )
+        entities[:ext_edges] = ext_edges
+        int_edges = Dict("internal_edges" => connintedges)
+        entities[:int_edges] = int_edges
+        # 3) Volumenes internos (Celdas)
+        faces_dict = Dict("Domain" => conn)
+        entities[:faces] = faces_dict
+    end
+    # ------------------------------
+    # Devolver el modelo
+    # ------------------------------
+    return EFGmodel(x, conn, entities, D, ncells, nnodes)
+end
+
+function get_entity(model::EFGmodel, tag::String)
+    for ent_type in keys(model.entities)
+        subdict = get(model.entities, ent_type, Dict{String,Union{Int,Matrix{Int}}}())
+        if haskey(subdict, tag)
+            return subdict[tag]
+        end
+    end
+    error("Tag '$tag' no encontrado en ninguna entidad del modelo")
+end
