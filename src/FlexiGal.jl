@@ -4,7 +4,7 @@ include("Shape_Functions.jl")
 include("Integration.jl")
 include("Assembling_Operators.jl")
 include("Fields_Operations.jl")
-export create_model, BackgroundIntegration, EFG_Functions, Influence_Domains, AssembleEFG
+export create_model, BackgroundIntegration, EFG_Functions, Influence_Domains, AssembleEFG, EFG_Field, Get_Point_Values, ∇
 
 function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
     conn = get_entity(model, tag)
