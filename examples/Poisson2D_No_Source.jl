@@ -21,4 +21,5 @@ T = (K + Kp) \ Q;
 Th=EFG_Field(T, Shape_Functions, Ω)
 Tgauss=Get_Point_Values(Th)
 ∇Th=∇(Th)
+gs=Ω[2]
 scatter(gs[:,1], gs[:,2], zcolor=Tgauss, color=:jet, marker=:square, markersize=1,markerstrokecolor=:transparent,markerstrokewidth=0, xlabel="X", ylabel="Y", title="Temperature Colormap")
