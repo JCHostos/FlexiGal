@@ -78,7 +78,7 @@ function AssembleEFG(model,
         elseif haskey(Shape_Functions[:boundary], tag)
             Shape_Functions[:boundary][tag]
         else
-            error("No se encontraron funciones de forma para el tag '$tag'.")
+            error("There are no shape functions for the tag '$tag'.")
         end
 
         PHI, DPHI, DOM = shape
@@ -95,7 +95,7 @@ function AssembleEFG(model,
     elseif matrix_type == "Load"
         return LOAD_VECTOR(prop, all_gs, all_PHI, all_DOM, nnod)
     else
-        error("Tipo de matriz '$matrix_type' no reconocido. Usar 'Laplacian', 'Mass' o 'Load'.")
+        error("Matrix Type '$matrix_type' no recognised. Please use 'Laplacian', 'Mass' or 'Load'.")
     end
 end
 end
