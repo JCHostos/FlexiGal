@@ -99,12 +99,4 @@ function AssembleEFG(model,
         error("Matrix Type '$matrix_type' no recognised. Please use 'Laplacian', 'Mass' or 'Load'.")
     end
 end
-struct EFGFunction
-    Tdom::Vector{Vector{Float64}}
-    Ts::Vector{Float64}
-    PHI::Vector{Vector{Float64}}
-    DPHI::Vector{Matrix{Float64}}
-    tag::String
-    Measure::Matrix{Float64}
-end
 end

@@ -1,4 +1,12 @@
 using LinearAlgebra
+struct EFGFunction
+    Tdom::Vector{Vector{Float64}}
+    Ts::Vector{Float64}
+    PHI::Vector{Vector{Float64}}
+    DPHI::Vector{Matrix{Float64}}
+    tag::String
+    Measure::Matrix{Float64}
+end
 function EFG_Field(field_nodal::Vector{Float64},
                    Shape_Functions::Dict,
                    Measure::Tuple{String,Matrix{Float64}})
