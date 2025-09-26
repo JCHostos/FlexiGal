@@ -16,6 +16,7 @@ function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
     end
     return (tag, gs)
 end
+# Constructing Shape Functions given model, Measures for Integration and Influence domains
 function EFG_Functions(model::EFGmodel,
     gs_list::Vector{Tuple{String,Matrix{Float64}}},
     dm::Matrix{Float64})
@@ -28,7 +29,6 @@ function EFG_Functions(model::EFGmodel,
             Vector{Vector{Int}}}}())
 
     for (tag, gs) in gs_list
-        # Determinar automáticamente tipo domain o boundary
         conn = get_entity(model, tag)
         dim = size(x, 2)
         gs_type = size(conn, 2) == 2^dim ? :domain : :boundary
@@ -39,6 +39,7 @@ function EFG_Functions(model::EFGmodel,
 
     return results
 end
+# Defining Influence Domains (Ongoing Development)
 function Influence_Domains(model, Domain, Divisions, dmax)
     dim = size(model.x, 2)
     dm = zeros(size(model.x, 1), dim)
@@ -56,6 +57,7 @@ function Influence_Domains(model, Domain, Divisions, dmax)
     end
     return dm
 end
+# Beta Version for Assembling EFG Matrices and Vectors
 function AssembleEFG(model,
     Measures::Union{Tuple{String,Matrix{Float64}},
                      AbstractVector{<:Tuple{String,Matrix{Float64}}}},
@@ -65,14 +67,12 @@ function AssembleEFG(model,
     measures_list = isa(Measures, Tuple) ? [Measures] : Measures
     nnod = size(model.x, 1)
 
-    # --- contenedores para acumular ---
     all_gs   = Matrix{Float64}(undef, 0, size(first(measures_list)[2],2))
     all_PHI  = Vector{Vector{Float64}}()
     all_DPHI = Vector{Matrix{Float64}}()
     all_DOM  = Vector{Vector{Int}}()
 
     for (tag, gs) in measures_list
-        # Selección de shape functions
         shape = if haskey(Shape_Functions[:domain], tag)
             Shape_Functions[:domain][tag]
         elseif haskey(Shape_Functions[:boundary], tag)
@@ -83,14 +83,11 @@ function AssembleEFG(model,
 
         PHI, DPHI, DOM = shape
 
-        # Concatenar
         all_gs   = vcat(all_gs, gs)
         append!(all_PHI,  PHI)
         append!(all_DPHI, DPHI)
         append!(all_DOM,  DOM)
     end
-
-    # --- llamada única según el tipo ---
     if matrix_type == "Laplacian"
         return COND_MATRIX(prop, all_gs, all_DPHI, all_DOM, nnod)
     elseif matrix_type == "Mass"
