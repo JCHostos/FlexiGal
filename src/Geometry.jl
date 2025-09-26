@@ -36,10 +36,10 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
         corner4 = (Nx + 1) * (Ny + 1)
         # 1) Nodos de las esquinas
         corner_nodes = Dict(
-            "corner1" => corner1,
-            "corner2" => corner2,
-            "corner3" => corner3,
-            "corner4" => corner4
+            "Corner1" => corner1,
+            "Corner2" => corner2,
+            "Corner3" => corner3,
+            "Corner4" => corner4
         )
         entities[:nodes] = corner_nodes
         # 2) Aristas externas con tags individuales
@@ -69,14 +69,14 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
             end
         end
         ext_edges = Dict(
-            "left" => left_edges,
-            "right" => right_edges,
-            "bottom" => bottom_edges,
-            "top" => top_edges,
-            "boundary_edges" => connextedges
+            "Left" => left_edges,
+            "Right" => right_edges,
+            "Bottom" => bottom_edges,
+            "Top" => top_edges,
+            "Boundary" => connextedges
         )
         entities[:ext_edges] = ext_edges
-        int_edges = Dict("internal_edges" => connintedges)
+        int_edges = Dict("Internal_Edges" => connintedges)
         entities[:int_edges] = int_edges
         # 3) Caras internas (Celdas)
         faces_dict = Dict("Domain" => conn)
@@ -99,14 +99,14 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
         corner8 = (Nx + 1) * (Ny + 1) * (Nz + 1)
         # 1) Nodos de las esquinas
         corner_nodes = Dict(
-            "corner1" => corner1,
-            "corner2" => corner2,
-            "corner3" => corner3,
-            "corner4" => corner4,
-            "corner5" => corner5,
-            "corner6" => corner6,
-            "corner7" => corner7,
-            "corner8" => corner8
+            "Corner1" => corner1,
+            "Corner2" => corner2,
+            "Corner3" => corner3,
+            "Corner4" => corner4,
+            "Corner5" => corner5,
+            "Corner6" => corner6,
+            "Corner7" => corner7,
+            "Corner8" => corner8
         )
         entities[:nodes] = corner_nodes
         # 2) Caras externas con tags individuales
@@ -144,16 +144,16 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
             end
         end
         ext_faces = Dict(
-            "left" => left_faces,
-            "right" => right_faces,
-            "bottom" => bottom_faces,
-            "top" => top_faces,
-            "back" => back_faces,
-            "front" => front_faces,
-            "boundary_faces" => connextfaces
+            "Left" => left_faces,
+            "Right" => right_faces,
+            "Bottom" => bottom_faces,
+            "Top" => top_faces,
+            "Back" => back_faces,
+            "Front" => front_faces,
+            "Boundary" => connextfaces
         )
         entities[:ext_faces] = ext_faces
-        int_faces = Dict("internal_faces" => connintfaces)
+        int_faces = Dict("Internal_Faces" => connintfaces)
         entities[:int_faces] = int_faces
         # 2) Aristas externas con tags individuales
         nedges=size(connextedges, 1)
@@ -226,10 +226,10 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
             "bottomfront" => bottomfront_edges,
             "topback" => toptback_edges,
             "topfront" => topfront_edges,
-            "boundary_edges" => connextedges
+            "External_Edges" => connextedges
         )
         entities[:ext_edges] = ext_edges
-        int_edges = Dict("internal_edges" => connintedges)
+        int_edges = Dict("Internal_Edges" => connintedges)
         entities[:int_edges] = int_edges
         # 3) Volumenes internos (Celdas)
         faces_dict = Dict("Domain" => conn)
