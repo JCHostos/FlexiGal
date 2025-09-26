@@ -1,6 +1,5 @@
 function pgauss(k::Int)
     if k == 1
-        # 1 punto de Gauss: fila 1 = puntos, fila 2 = pesos
         v = [0.0;
             2.0]
     elseif k == 2
@@ -19,7 +18,7 @@ function pgauss(k::Int)
         v = [x1 x2 -x2 -x1;
             w1 w2 w2 w1]
     else
-        error("pgauss solo está implementado para k = 1, 2, 3 o 4")
+        error("Gauss integrations just implemented for ngpts = 1, 2, 3 o 4")
     end
     return v
 end
@@ -28,7 +27,6 @@ function Measure2D_Cell(xi::Float64, eta::Float64, xe::Array{Float64,3})
     numcell, numvxcell, dim = size(xe)
     @assert numvxcell == 4 "Elemento cuadrilátero de 4 nodos esperado"
 
-    # ----- Funciones de forma -----
     phi = [
         0.25 * (1 - xi) * (1 - eta),
         0.25 * (1 + xi) * (1 - eta),
@@ -50,12 +48,11 @@ function Measure2D_Cell(xi::Float64, eta::Float64, xe::Array{Float64,3})
         0.25 * (1 - xi)
     ]
 
-    # ----- Coordenadas físicas y derivadas -----
     xg = zeros(numcell, dim)
     dxgxi = zeros(numcell, dim)
     dxgeta = zeros(numcell, dim)
 
-    for i in 1:dim          # coordenada física (x,y[,z])
+    for i in 1:dim 
         for k in 1:numvxcell
             xg[:, i] .+= phi[k] .* xe[:, k, i]
             dxgxi[:, i] .+= dphidxi[k] .* xe[:, k, i]
@@ -63,29 +60,24 @@ function Measure2D_Cell(xi::Float64, eta::Float64, xe::Array{Float64,3})
         end
     end
 
-    # ----- Jacobiano -----
     Jac = if dim == 2
-        # Elemento plano: determinante de la matriz 2x2
         dxgxi[:, 1] .* dxgeta[:, 2] .- dxgxi[:, 2] .* dxgeta[:, 1]
     elseif dim == 3
-        # Superficie en 3D: norma del producto vectorial
         Sx = dxgxi[:, 2] .* dxgeta[:, 3] .- dxgeta[:, 2] .* dxgxi[:, 3]
         Sy = dxgeta[:, 1] .* dxgxi[:, 3] .- dxgxi[:, 1] .* dxgeta[:, 3]
         Sz = dxgxi[:, 1] .* dxgeta[:, 2] .- dxgeta[:, 1] .* dxgxi[:, 2]
         sqrt.(Sx .^ 2 .+ Sy .^ 2 .+ Sz .^ 2)
     else
-        error("dim debe ser 2 o 3")
+        error("dim must be 2 o 3")
     end
 
     return xg, Jac, phi
 end
 
 function Measure3D_Cell(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Float64,3})
-    # XYE: numcell × numvxcell × dim  (dim = 3)
     numcell, numvxcell, dim = size(xe)
     @assert dim == 3 "Esta función es sólo para celdas 3D"
 
-    # --- Funciones de forma hexaédricas (8 nodos) ---
     phi = [
         (1 / 8) * (1 - xi) * (1 - eta) * (1 - zeta),
         (1 / 8) * (1 + xi) * (1 - eta) * (1 - zeta),
@@ -130,12 +122,10 @@ function Measure3D_Cell(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Floa
         (1 / 8) * (1 - xi) * (1 + eta)
     ]
 
-    # Gradientes en coordenadas locales (3 × 8)
     dphiloc = vcat(dphidxi', dphideta', dphidzeta')
 
-    # --- Inicialización ---
-    J = zeros(numcell, dim, dim)   # Jacobiano de cada celda
-    xg = zeros(numcell, dim)        # Coordenadas físicas en el punto (xi,eta,zeta)
+    J = zeros(numcell, dim, dim)
+    xg = zeros(numcell, dim)
 
     # Ensamblaje de J y cálculo de XYG
     for i in 1:dim          # dirección física (x,y,z)
@@ -149,7 +139,6 @@ function Measure3D_Cell(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Floa
         end
     end
 
-    # --- Determinante del Jacobiano (volumen local) ---
     Jac = @. J[:,1,1]*(J[:,2,2]*J[:,3,3] - J[:,3,2]*J[:,2,3]) -
         J[:,1,2]*(J[:,2,1]*J[:,3,3] - J[:,3,1]*J[:,2,3]) +
         J[:,1,3]*(J[:,2,1]*J[:,3,2] - J[:,3,1]*J[:,2,2])
@@ -158,18 +147,14 @@ function Measure3D_Cell(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Floa
 end
 
 function egauss(xc::Array{Float64,2}, conn::Array{Int,2}, gauss::Array{Float64,2})
-    dim = size(xc, 2)                  # 2D o 3D
-    l = size(gauss, 2)                # número de puntos de Gauss por dirección
-    npts = l^dim                       # total de puntos de Gauss por celda
-    numcell = size(conn, 1)            # número de celdas
-    # columnas: x,y,(z), peso, jac
-    ncol = dim + 2                     # 2D -> 4, 3D -> 5
+    dim = size(xc, 2)                 
+    l = size(gauss, 2)                
+    npts = l^dim                     
+    numcell = size(conn, 1)  
+    ncol = dim + 2          
     gs = zeros(numcell * npts, ncol)
-
-    xe = Coords_by_Ele(xc, conn)             # nodos por celda
-
+    xe = Coords_by_Ele(xc, conn)   
     count = 0
-    # generamos todos los índices combinados de Gauss
     if dim == 2
         for j in 1:l
             for i in 1:l
@@ -191,28 +176,26 @@ function egauss(xc::Array{Float64,2}, conn::Array{Int,2}, gauss::Array{Float64,2
             gs[count:l^3:end, 5] .= Jac
         end
     else
-        error("Solo 2D o 3D soportados")
+        error("Only 2D or 3D supported")
     end
 
     return gs
 end
 
 function egauss_bound(xc::Array{Float64,2}, conn::Array{Int,2}, gauss::Array{Float64,2})
-    dim = size(xc, 2)                  # 2D o 3D
-    l = size(gauss, 2)                # número de puntos de Gauss por dirección
-    npts = l^(dim-1)                       # total de puntos de Gauss por celda
-    numcell = size(conn, 1)            # número de celdas
-    # columnas: x,y,(z), peso, jac
-    ncol = dim + 2                     # 2D -> 4, 3D -> 5
+    dim = size(xc, 2)
+    l = size(gauss, 2)
+    npts = l^(dim-1)
+    numcell = size(conn, 1)
+    ncol = dim + 2
     gs = zeros(numcell * npts, ncol)
-    xe = Coords_by_Ele(xc, conn)             # nodos por celda
+    xe = Coords_by_Ele(xc, conn)
     count = 0
-    # generamos todos los índices combinados de Gauss
     if dim == 2
             for i in 1:l
                 count += 1
                 xi = gauss[1, i]
-                xg = zeros(numcell, 2)  # n elementos x 2 coordenadas
+                xg = zeros(numcell, 2)
                 xg[:, 1] .= (1 - xi)/2 * xe[:, 1, 1] .+ (1 + xi)/2 * xe[:, 2, 1]
                 xg[:, 2] .= (1 - xi)/2 * xe[:, 1, 2] .+ (1 + xi)/2 * xe[:, 2, 2]
                 gs[count:l:end,1:2] .= xg[:,1:2]
@@ -229,7 +212,7 @@ function egauss_bound(xc::Array{Float64,2}, conn::Array{Int,2}, gauss::Array{Flo
             gs[count:l^2:end, 5] .= Jac
         end
     else
-        error("Solo 2D o 3D soportados")
+        error("Only 2D or 3D supported")
     end
 
     return gs
