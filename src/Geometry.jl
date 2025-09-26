@@ -1,10 +1,10 @@
 include("Meshing.jl")
 # ------------------------------
-# Structs para el modelo FEM
+# Structs for model
 # ------------------------------
 struct EFGmodel
-    x::Matrix{Float64}                               # nodos
-    conn::Matrix{Int}                                # conectividad
+    x::Matrix{Float64}                               # Nodes Coordinates
+    conn::Matrix{Int}                                # Connectivity
     entities::Dict{Symbol,Dict{String,Union{Int,Matrix{Int}}}} # entidades con tags
     dim::Int
     ncells::Int
@@ -12,7 +12,7 @@ struct EFGmodel
 end
 
 # ------------------------------
-# Función para crear el modelo FEM 2D con 9 tags
+# Function to create a structured cartesian mesh model with tagged entities
 # ------------------------------
 function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where D
     @assert D == 2 || D == 3 "Solo 2D o 3D soportados"
@@ -25,10 +25,10 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
         Nx, Ny = divisions
         Lx, Ly = domain
 
-        # Encontrar aristas internas y externas
+        # Finding Internal and External edges
         connintedges, connextedges = FindEdgesQuad(conn)
         # ------------------------------
-        # Inicializar entities
+        # Defining Entities
         # ------------------------------
         corner1 = 1
         corner2 = Nx + 1
@@ -42,8 +42,7 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
             "Corner4" => corner4
         )
         entities[:nodes] = corner_nodes
-        # 2) Aristas externas con tags individuales
-        # Para esto necesitamos identificar edges por posición
+        # Tags for edges
         left_edges = Matrix{Int}(undef, Ny, 2)
         right_edges = Matrix{Int}(undef, Ny, 2)
         bottom_edges = Matrix{Int}(undef, Nx, 2)
@@ -78,16 +77,16 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
         entities[:ext_edges] = ext_edges
         int_edges = Dict("Internal_Edges" => connintedges)
         entities[:int_edges] = int_edges
-        # 3) Caras internas (Celdas)
+        # 3) Faces (2D Cells)
         faces_dict = Dict("Domain" => conn)
         entities[:faces] = faces_dict
     elseif D == 3
         Nx, Ny, Nz = divisions
         Lx, Ly, Lz = domain
-        # Encontrar caras y aristas internas y externas
+        # Finding Internal and External faces and edges
         connintfaces, connextfaces, connintedges, connextedges = FindFacesandEdgesHexa(conn)
         # ------------------------------
-        # Inicializar entities
+        # Defining Entities
         # ------------------------------
         corner1 = 1
         corner2 = Nx + 1
@@ -97,7 +96,7 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
         corner6 = (Nx + 1) * (Ny + 1) * (Nz) + (Nx + 1)
         corner7 = (Nx + 1) * (Ny + 1) * (Nz) + (Nx + 1) * (Ny) + 1
         corner8 = (Nx + 1) * (Ny + 1) * (Nz + 1)
-        # 1) Nodos de las esquinas
+        # 1) Corner Nodes
         corner_nodes = Dict(
             "Corner1" => corner1,
             "Corner2" => corner2,
@@ -109,7 +108,7 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
             "Corner8" => corner8
         )
         entities[:nodes] = corner_nodes
-        # 2) Caras externas con tags individuales
+        # 2) Tags for External Faces
         left_faces = Matrix{Int}(undef, Nz * Ny, 4)
         right_faces = Matrix{Int}(undef, Nz * Ny, 4)
         bottom_faces = Matrix{Int}(undef, Nx * Ny, 4)
@@ -155,7 +154,7 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
         entities[:ext_faces] = ext_faces
         int_faces = Dict("Internal_Faces" => connintfaces)
         entities[:int_faces] = int_faces
-        # 2) Aristas externas con tags individuales
+        # 2) Tags for External Edges
         nedges=size(connextedges, 1)
         leftbottom_edges = Matrix{Int}(undef, Ny, 2)
         rightbottom_edges = Matrix{Int}(undef, Ny, 2)
@@ -231,12 +230,12 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
         entities[:ext_edges] = ext_edges
         int_edges = Dict("Internal_Edges" => connintedges)
         entities[:int_edges] = int_edges
-        # 3) Volumenes internos (Celdas)
+        # 3) Volumes (3D Cells)
         faces_dict = Dict("Domain" => conn)
         entities[:faces] = faces_dict
     end
     # ------------------------------
-    # Devolver el modelo
+    # Return model
     # ------------------------------
     return EFGmodel(x, conn, entities, D, ncells, nnodes)
 end
