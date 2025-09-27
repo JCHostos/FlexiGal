@@ -4,7 +4,8 @@ include("Shape_Functions.jl")
 include("Integration.jl")
 include("Assembling_Operators.jl")
 include("Fields_Operations.jl")
-export create_model, BackgroundIntegration, EFG_Functions, Influence_Domains, AssembleEFG, EFG_Field, Get_Point_Values, ∇
+export create_model, BackgroundIntegration, EFG_Functions, Influence_Domains, AssembleEFG, EFG_Field, 
+Entity_Measure, Get_Point_Values, ∇
 
 function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
     conn = get_entity(model, tag)
@@ -99,7 +100,7 @@ function AssembleEFG(model,
         error("Matrix Type '$matrix_type' no recognised. Please use 'Laplacian', 'Mass' or 'Load'.")
     end
 end
-function Domain_Measure(Measures::Union{Tuple{String,Matrix{Float64}},
+function Entity_Measure(Measures::Union{Tuple{String,Matrix{Float64}},
                      AbstractVector{<:Tuple{String,Matrix{Float64}}}},
                       Shape_Functions::Dict)
 
