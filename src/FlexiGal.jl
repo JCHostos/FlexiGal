@@ -106,6 +106,12 @@ function AssembleEFG(model,
         error("Matrix Type '$matrix_type' no recognised. Please use 'Laplacian', 'Mass' or 'Load'.")
     end
 end
+struct DomainMeasure
+    gs   :: Matrix{Float64}
+    PHI  :: Vector{Vector{Float64}}
+    DPHI :: Vector{Matrix{Float64}}
+    DOM  :: Vector{Vector{Int}}
+end
 function Domain_Measure(
     Measures::Union{Tuple{String, Matrix{Float64}},
                     AbstractVector{<:Tuple{String, Matrix{Float64}}}},
@@ -117,12 +123,6 @@ function Domain_Measure(
     all_PHI  = Vector{Vector{Float64}}()
     all_DPHI = Vector{Matrix{Float64}}()
     all_DOM  = Vector{Vector{Int}}()
-struct DomainMeasure
-    gs   :: Matrix{Float64}
-    PHI  :: Vector{Vector{Float64}}
-    DPHI :: Vector{Matrix{Float64}}
-    DOM  :: Vector{Vector{Int}}
-end
     for (tag, gs) in measures_list
         # Buscar en domain o boundary
         shape =
