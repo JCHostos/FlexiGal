@@ -3,9 +3,8 @@ include("Geometry.jl")
 include("Shape_Functions.jl")
 include("Integration.jl")
 include("Assembling_Operators.jl")
-include("Fields_Operations.jl")
-export create_model, BackgroundIntegration, EFG_Functions, Influence_Domains, AssembleEFG, EFG_Field, 
-Domain_Measure, Get_Point_Values, ∇
+export create_model, BackgroundIntegration, EFGSpace, Influence_Domains, AssembleEFG, EFGFunction,
+    Domain_Measure, Get_Point_Values, ∇
 
 function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
     conn = get_entity(model, tag)
@@ -19,16 +18,18 @@ function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
     return (tag, gs)
 end
 # Constructing Shape Functions given model, Measures for Integration and Influence domains
-function EFG_Functions(model::EFGmodel,
+struct EFGSpace
+    domain::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
+    boundary::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
+end
+include("Fields_Operations.jl")
+function EFGSpace(model::EFGmodel,
     gs_list::Vector{Tuple{String,Matrix{Float64}}},
     dm::Matrix{Float64})
+
     x = model.x
-    results = Dict(:domain => Dict{String,Tuple{Vector{Vector{Float64}},
-            Vector{Matrix{Float64}},
-            Vector{Vector{Int}}}}(),
-        :boundary => Dict{String,Tuple{Vector{Vector{Float64}},
-            Vector{Matrix{Float64}},
-            Vector{Vector{Int}}}}())
+    results_domain = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
+    results_boundary = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
 
     for (tag, gs) in gs_list
         conn = get_entity(model, tag)
@@ -36,10 +37,14 @@ function EFG_Functions(model::EFGmodel,
         gs_type = size(conn, 2) == 2^dim ? :domain : :boundary
 
         PHI, DPHI, DOM = SHAPE_FUN(gs, x, dm)
-        results[gs_type][tag] = (PHI, DPHI, DOM)
-    end
 
-    return results
+        if gs_type == :domain
+            results_domain[tag] = (PHI, DPHI, DOM)
+        else
+            results_boundary[tag] = (PHI, DPHI, DOM)
+        end
+    end
+    return EFGSpace(results_domain, results_boundary)
 end
 # Defining Influence Domains (Ongoing Development)
 function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dmax::Float64)
@@ -62,34 +67,35 @@ end
 # Beta Version for Assembling EFG Matrices and Vectors
 function AssembleEFG(model,
     Measures::Union{Tuple{String,Matrix{Float64}},
-                     AbstractVector{<:Tuple{String,Matrix{Float64}}}},
-    Shape_Functions::Dict,
+        AbstractVector{<:Tuple{String,Matrix{Float64}}}},
+    Shape_Functions::EFGSpace,
     matrix_type::String; prop=1.0)
 
     measures_list = isa(Measures, Tuple) ? [Measures] : Measures
     nnod = size(model.x, 1)
 
-    all_gs   = Matrix{Float64}(undef, 0, size(first(measures_list)[2],2))
-    all_PHI  = Vector{Vector{Float64}}()
+    all_gs = Matrix{Float64}(undef, 0, size(first(measures_list)[2], 2))
+    all_PHI = Vector{Vector{Float64}}()
     all_DPHI = Vector{Matrix{Float64}}()
-    all_DOM  = Vector{Vector{Int}}()
+    all_DOM = Vector{Vector{Int}}()
 
     for (tag, gs) in measures_list
-        shape = if haskey(Shape_Functions[:domain], tag)
-            Shape_Functions[:domain][tag]
-        elseif haskey(Shape_Functions[:boundary], tag)
-            Shape_Functions[:boundary][tag]
+        shape = if haskey(Shape_Functions.domain, tag)
+            Shape_Functions.domain[tag]
+        elseif haskey(Shape_Functions.boundary, tag)
+            Shape_Functions.boundary[tag]
         else
             error("There are no shape functions for the tag '$tag'.")
         end
 
         PHI, DPHI, DOM = shape
 
-        all_gs   = vcat(all_gs, gs)
-        append!(all_PHI,  PHI)
+        all_gs = vcat(all_gs, gs)
+        append!(all_PHI, PHI)
         append!(all_DPHI, DPHI)
-        append!(all_DOM,  DOM)
+        append!(all_DOM, DOM)
     end
+
     if matrix_type == "Laplacian"
         return COND_MATRIX(prop, all_gs, all_DPHI, all_DOM, nnod)
     elseif matrix_type == "Mass"
@@ -100,17 +106,12 @@ function AssembleEFG(model,
         error("Matrix Type '$matrix_type' no recognised. Please use 'Laplacian', 'Mass' or 'Load'.")
     end
 end
-function Domain_Measure(Measures::Union{Tuple{String,Matrix{Float64}},
-                     AbstractVector{<:Tuple{String,Matrix{Float64}}}},
-                      Shape_Functions::Dict)
-
+function Domain_Measure(Measures::Union{Tuple{String,Matrix{Float64}},AbstractVector{<:Tuple{String,Matrix{Float64}}}}, Shape_Functions::Dict)
     measures_list = isa(Measures, Tuple) ? [Measures] : Measures
-
-    all_gs   = Matrix{Float64}(undef, 0, size(first(measures_list)[2],2))
-    all_PHI  = Vector{Vector{Float64}}()
+    all_gs = Matrix{Float64}(undef, 0, size(first(measures_list)[2], 2))
+    all_PHI = Vector{Vector{Float64}}()
     all_DPHI = Vector{Matrix{Float64}}()
-    all_DOM  = Vector{Vector{Int}}()
-
+    all_DOM = Vector{Vector{Int}}()
     for (tag, gs) in measures_list
         shape = if haskey(Shape_Functions[:domain], tag)
             Shape_Functions[:domain][tag]
@@ -119,13 +120,11 @@ function Domain_Measure(Measures::Union{Tuple{String,Matrix{Float64}},
         else
             error("There are no shape functions for the tag '$tag'.")
         end
-
         PHI, DPHI, DOM = shape
-
-        all_gs   = vcat(all_gs, gs)
-        append!(all_PHI,  PHI)
+        all_gs = vcat(all_gs, gs)
+        append!(all_PHI, PHI)
         append!(all_DPHI, DPHI)
-        append!(all_DOM,  DOM)
+        append!(all_DOM, DOM)
     end
     return (all_gs, all_PHI, all_DPHI, all_DOM)
 end
