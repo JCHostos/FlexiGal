@@ -142,4 +142,9 @@ function Domain_Measure(
     end
     return DomainMeasure(all_gs, all_PHI, all_DPHI, all_DOM)
 end
+function AssignFields!(u, δu, dΩ::DomainMeasure)
+    u  = dΩ
+    δu = dΩ
+    return u, δu
+end
 end
