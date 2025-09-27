@@ -106,26 +106,40 @@ function AssembleEFG(model,
         error("Matrix Type '$matrix_type' no recognised. Please use 'Laplacian', 'Mass' or 'Load'.")
     end
 end
-function Domain_Measure(Measures::Union{Tuple{String,Matrix{Float64}},AbstractVector{<:Tuple{String,Matrix{Float64}}}}, Shape_Functions::Dict)
+function Domain_Measure(
+    Measures::Union{Tuple{String, Matrix{Float64}},
+                    AbstractVector{<:Tuple{String, Matrix{Float64}}}},
+    Shape_Functions::EFGSpace
+)
     measures_list = isa(Measures, Tuple) ? [Measures] : Measures
-    all_gs = Matrix{Float64}(undef, 0, size(first(measures_list)[2], 2))
-    all_PHI = Vector{Vector{Float64}}()
+
+    all_gs   = Matrix{Float64}(undef, 0, size(first(measures_list)[2], 2))
+    all_PHI  = Vector{Vector{Float64}}()
     all_DPHI = Vector{Matrix{Float64}}()
-    all_DOM = Vector{Vector{Int}}()
+    all_DOM  = Vector{Vector{Int}}()
+struct DomainMeasure
+    gs   :: Matrix{Float64}
+    PHI  :: Vector{Vector{Float64}}
+    DPHI :: Vector{Matrix{Float64}}
+    DOM  :: Vector{Vector{Int}}
+end
     for (tag, gs) in measures_list
-        shape = if haskey(Shape_Functions[:domain], tag)
-            Shape_Functions[:domain][tag]
-        elseif haskey(Shape_Functions[:boundary], tag)
-            Shape_Functions[:boundary][tag]
-        else
-            error("There are no shape functions for the tag '$tag'.")
-        end
+        # Buscar en domain o boundary
+        shape =
+            if haskey(Shape_Functions.domain, tag)
+                Shape_Functions.domain[tag]
+            elseif haskey(Shape_Functions.boundary, tag)
+                Shape_Functions.boundary[tag]
+            else
+                error("There are no shape functions for the tag '$tag'.")
+            end
+
         PHI, DPHI, DOM = shape
-        all_gs = vcat(all_gs, gs)
-        append!(all_PHI, PHI)
+        all_gs   = vcat(all_gs, gs)
+        append!(all_PHI,  PHI)
         append!(all_DPHI, DPHI)
-        append!(all_DOM, DOM)
+        append!(all_DOM,  DOM)
     end
-    return (all_gs, all_PHI, all_DPHI, all_DOM)
+    return DomainMeasure(all_gs, all_PHI, all_DPHI, all_DOM)
 end
 end
