@@ -41,6 +41,7 @@ function ∇(f::EFGFunction)
     end
     return grads
 end
+struct DummyVar end
 function ∇(::DummyVar, dΓd::Tuple)
     _, _, all_DPHI, _ = dΓd
     return all_DPHI
