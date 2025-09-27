@@ -41,8 +41,15 @@ function ∇(f::EFGFunction)
     end
     return grads
 end
-struct DummyVar end
-function ∇(::DummyVar, dΓd::Tuple)
-    _, _, all_DPHI, _ = dΓd
-    return all_DPHI
+function ∇(EFGdict::Dict)
+    result = Dict(:domain => Dict{String, Any}(),
+                  :boundary => Dict{String, Any}())
+    
+    for gs_type in (:domain, :boundary)
+        for (tag, shape) in EFGdict[gs_type]
+            _, DPHI, _ = shape
+            result[gs_type][tag] = DPHI
+        end
+    end
+    return result
 end

@@ -5,7 +5,7 @@ include("Integration.jl")
 include("Assembling_Operators.jl")
 include("Fields_Operations.jl")
 export create_model, BackgroundIntegration, EFG_Functions, Influence_Domains, AssembleEFG, EFG_Field, 
-Entity_Measure, Get_Point_Values, ∇
+Domain_Measure, Get_Point_Values, ∇
 
 function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
     conn = get_entity(model, tag)
@@ -42,7 +42,7 @@ function EFG_Functions(model::EFGmodel,
     return results
 end
 # Defining Influence Domains (Ongoing Development)
-function Influence_Domains(model, Domain, Divisions, dmax)
+function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dmax::Float64)
     dim = size(model.x, 2)
     dm = zeros(size(model.x, 1), dim)
     if dim == 2
@@ -100,7 +100,7 @@ function AssembleEFG(model,
         error("Matrix Type '$matrix_type' no recognised. Please use 'Laplacian', 'Mass' or 'Load'.")
     end
 end
-function Entity_Measure(Measures::Union{Tuple{String,Matrix{Float64}},
+function Domain_Measure(Measures::Union{Tuple{String,Matrix{Float64}},
                      AbstractVector{<:Tuple{String,Matrix{Float64}}}},
                       Shape_Functions::Dict)
 

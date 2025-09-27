@@ -1,5 +1,4 @@
 using FlexiGal
-using LinearAlgebra
 using Plots
 Domain = (1.0, 1.0)
 Divisions = (100, 100)
