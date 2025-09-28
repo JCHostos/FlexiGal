@@ -22,7 +22,6 @@ struct EFGSpace
     domain::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
     boundary::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
 end
-include("Fields_Operations.jl")
 function EFGSpace(model::EFGmodel,
     gs_list::Vector{Tuple{String,Matrix{Float64}}},
     dm::Matrix{Float64})
@@ -107,22 +106,23 @@ function AssembleEFG(model,
     end
 end
 struct DomainMeasure
-    gs   :: Matrix{Float64}
-    PHI  :: Vector{Vector{Float64}}
-    DPHI :: Vector{Matrix{Float64}}
-    DOM  :: Vector{Vector{Int}}
+    gs::Matrix{Float64}
+    PHI::Vector{Vector{Float64}}
+    DPHI::Vector{Matrix{Float64}}
+    DOM::Vector{Vector{Int}}
 end
+include("Fields_Operations.jl")
 function Domain_Measure(
-    Measures::Union{Tuple{String, Matrix{Float64}},
-                    AbstractVector{<:Tuple{String, Matrix{Float64}}}},
+    Measures::Union{Tuple{String,Matrix{Float64}},
+        AbstractVector{<:Tuple{String,Matrix{Float64}}}},
     Shape_Functions::EFGSpace
 )
     measures_list = isa(Measures, Tuple) ? [Measures] : Measures
 
-    all_gs   = Matrix{Float64}(undef, 0, size(first(measures_list)[2], 2))
-    all_PHI  = Vector{Vector{Float64}}()
+    all_gs = Matrix{Float64}(undef, 0, size(first(measures_list)[2], 2))
+    all_PHI = Vector{Vector{Float64}}()
     all_DPHI = Vector{Matrix{Float64}}()
-    all_DOM  = Vector{Vector{Int}}()
+    all_DOM = Vector{Vector{Int}}()
     for (tag, gs) in measures_list
         # Buscar en domain o boundary
         shape =
@@ -135,15 +135,11 @@ function Domain_Measure(
             end
 
         PHI, DPHI, DOM = shape
-        all_gs   = vcat(all_gs, gs)
-        append!(all_PHI,  PHI)
+        all_gs = vcat(all_gs, gs)
+        append!(all_PHI, PHI)
         append!(all_DPHI, DPHI)
-        append!(all_DOM,  DOM)
+        append!(all_DOM, DOM)
     end
     return DomainMeasure(all_gs, all_PHI, all_DPHI, all_DOM)
-end
-function AssignFields!(u, dΩ::DomainMeasure)
-    u  = dΩ
-    return u
 end
 end

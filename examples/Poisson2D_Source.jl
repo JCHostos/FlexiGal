@@ -1,5 +1,4 @@
 using FlexiGal
-using LinearAlgebra
 using Plots
 Domain = (1.0, 1.0)
 Divisions = (100, 100)
@@ -10,12 +9,12 @@ ngpts = 3
 Ω = BackgroundIntegration(model, "Domain", ngpts)
 Γ = BackgroundIntegration(model, "Boundary", ngpts)
 Measures = [Ω, Γ]
-Shape_Functions = EFG_Functions(model, Measures, dm)
+Shape_Functions = EFGSpace(model, Measures, dm)
 K = AssembleEFG(model, Ω, Shape_Functions, "Laplacian"; prop=1)
 Kp = AssembleEFG(model, Γ, Shape_Functions, "Mass"; prop=1000)
 Q = AssembleEFG(model, Ω, Shape_Functions, "Load"; prop=5000) # Uniform Source
 T = (K + Kp) \ Q;
-Th=EFG_Field(T, Shape_Functions, Ω)
+Th=EFGFunction(T, Shape_Functions, Ω)
 Tgauss=Get_Point_Values(Th)
 ∇Th=∇(Th)
 gs=Ω[2]
