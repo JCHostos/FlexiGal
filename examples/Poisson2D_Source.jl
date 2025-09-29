@@ -14,7 +14,7 @@ dΩ = EFG_Measure(Ω,Tspace)
 a(δT,T,dΩ)=∫(∇(δT)⋅∇(T))*dΩ
 K= Bilinear_Assembler(a,dΩ)
 dΓ = EFG_Measure(Γ,Tspace)
-a(δT,T,dΓ)=∫(1000.0*(δT⋅T))*dΓ
+a(δT,T,dΓ)=∫(δT*(1000*T))*dΓ
 Kp = Bilinear_Assembler(a,dΓ) 
 Q = AssembleEFG(Ω, Tspace, "Load"; prop=5000) # Uniform Source
 T = (K + Kp) \ Q;

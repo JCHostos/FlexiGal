@@ -128,10 +128,16 @@ end
 import Base: *
 (*)(a::Integrand, b::EFGMeasure) = Integrate(a.object, b)
 (*)(a::Integrand, b::SingleDomainMeasure) = Integrate(a.object, b)
-(*)(a::Float64, b::EFGFunction) = a*Get_Point_Values(b)
-(*)(a::Float64, b::GradEFGFunction) = a*b.grads
-(*)(a::Float64, b::SingleEFGMeasure) = a*b.phi
-(*)(a::Float64, b::GradSingleEFGMeasure) = a*b.dphi
+(*)(a::Union{Float64,Int}, b::EFGFunction) = a*Get_Point_Values(b)
+(*)(a::EFGFunction,b::Union{Float64,Int}) = Get_Point_Values(a)*b
+(*)(a::Union{Float64,Int}, b::GradEFGFunction) = a*b.grads
+(*)(a::GradEFGFunction,b::Union{Float64,Int}) = a.grads*b
+(*)(a::Union{Float64,Int}, b::SingleEFGMeasure) = a*b.phi
+(*)(a::SingleEFGMeasure,b::Union{Float64,Int}) = a.phi*b
+(*)(a::Union{Float64,Int}, b::GradSingleEFGMeasure) = a*b.dphi
+(*)(a::GradSingleEFGMeasure,b::Union{Float64,Int}) = a.dphi*b
+(*)(a::EFGFunction, b::EFGFunction) = Internal_Product(a, b)
+(*)(a::SingleEFGMeasure, b::SingleEFGMeasure)= Internal_Product(a,b)
 import Base: ⋅
 (⋅)(a::EFGFunction, b::EFGFunction) = Internal_Product(a, b)
 (⋅)(a::GradEFGFunction, b::GradEFGFunction) = Internal_Product(a, b)

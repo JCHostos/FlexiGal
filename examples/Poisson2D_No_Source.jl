@@ -16,7 +16,7 @@ dΩ = EFG_Measure(Ω,Tspace)
 a(δT,T,dΩ)=∫(∇(δT)⋅∇(T))*dΩ
 K= Bilinear_Assembler(a,dΩ)
 dΓd = EFG_Measure(Γd,Tspace)
-a(δT,T,dΓd)=∫(1000.0*(δT⋅T))*dΓd
+a(δT,T,dΓd)=∫(δT*(1000*T))*dΓd
 Kp = Bilinear_Assembler(a,dΓd) 
 Q = AssembleEFG(Γ2, Tspace, "Load"; prop=5000.0) # Non Null Dirichlet BC T=5
 T = (K + Kp) \ Q;
