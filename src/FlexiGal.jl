@@ -4,7 +4,7 @@ include("Shape_Functions.jl")
 include("Integration.jl")
 include("Assembling_Operators.jl")
 export create_model, BackgroundIntegration, EFGSpace, Influence_Domains, AssembleEFG, EFGFunction,
-    Domain_Measure, Get_Point_Values, ∇
+    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫
 
 function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
     conn = get_entity(model, tag)
@@ -112,6 +112,7 @@ struct DomainMeasure
     DOM::Vector{Vector{Int}}
 end
 include("Fields_Operations.jl")
+export ⋅
 function Domain_Measure(
     Measures::Union{Tuple{String,Matrix{Float64}},
         AbstractVector{<:Tuple{String,Matrix{Float64}}}},
@@ -141,5 +142,9 @@ function Domain_Measure(
         append!(all_DOM, DOM)
     end
     return DomainMeasure(all_gs, all_PHI, all_DPHI, all_DOM)
+end
+function Symbolyc_Assembler(δf::EFGSpace,f::EFGSpace,Measures::Union{Tuple{String,Matrix{Float64}},
+        AbstractVector{<:Tuple{String,Matrix{Float64}}}})
+return (Domain_Measure(Measures,f), Domain_Measure(Measures,δf))
 end
 end

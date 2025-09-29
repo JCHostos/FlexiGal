@@ -1,7 +1,6 @@
 using LinearAlgebra
 struct EFGFunction
-    Tdom::Vector{Vector{Float64}}
-    Ts::Vector{Float64}
+    fdom::Vector{Vector{Float64}}
     PHI::Vector{Vector{Float64}}
     DPHI::Vector{Matrix{Float64}}
     tag::String
@@ -9,10 +8,9 @@ struct EFGFunction
 end
 
 function EFGFunction(field_nodal::Vector{Float64},
-                     Shape_Functions::EFGSpace,
-                     Measure::Tuple{String,Matrix{Float64}})
+    Shape_Functions::EFGSpace,
+    Measure::Tuple{String,Matrix{Float64}})
     tag, gs = Measure
-
     # Buscar funciones de forma para ese tag
     if haskey(Shape_Functions.domain, tag)
         PHI, DPHI, DOM = Shape_Functions.domain[tag]
@@ -21,28 +19,85 @@ function EFGFunction(field_nodal::Vector{Float64},
     else
         error("No se encontraron funciones de forma para el tag '$tag'.")
     end
-
     # Construir Tdom en los puntos de Gauss
     ngauss = length(DOM)
-    Tdom = Vector{Vector{Float64}}(undef, ngauss)
-    Ts = Vector{Float64}(undef, ngauss)
+    fdom = Vector{Vector{Float64}}(undef, ngauss)
     @inbounds for i in 1:ngauss
-        Tdom[i] = field_nodal[DOM[i]]
-        Ts[i] = dot(PHI[i], Tdom[i])
+        fdom[i] = field_nodal[DOM[i]]
     end
-
-    return EFGFunction(Tdom, Ts, PHI, DPHI, tag, gs)
+    return EFGFunction(fdom, PHI, DPHI, tag, gs)
 end
-Get_Point_Values(f::EFGFunction) = f.Ts
+function Get_Point_Values(f::EFGFunction)
+    ngauss = length(f.PHI)
+    PHI = f.PHI
+    fdom = f.fdom
+    fs = Vector{Float64}(undef, ngauss)
+    @inbounds for i in 1:ngauss
+        fs[i] = dot(PHI[i], fdom[i])
+    end
+    return fs
+end
+struct GradEFGFunction
+    grads::Vector{Vector{Float64}}
+end
 function ∇(f::EFGFunction)
     ngauss = length(f.DPHI)
-    grads  = Vector{Vector{Float64}}(undef, ngauss)
+    grads = Vector{Vector{Float64}}(undef, ngauss)
     @inbounds for i in 1:ngauss
-        # gradiente = DPHI[i]' * Tdom[i]
-        grads[i] = f.DPHI[i]' * f.Tdom[i]
+        grads[i] = f.DPHI[i]' * f.fdom[i]
     end
-    return grads
+    return GradEFGFunction(grads)
+end
+struct GradDomainMeasure
+    DPHI::Vector{Matrix{Float64}}
 end
 function ∇(dm::DomainMeasure)
-    return dm.DPHI
+    return GradDomainMeasure(dm.DPHI)
 end
+function Internal_Product(a::EFGFunction, b::EFGFunction)
+    as = Get_Point_Values(a)
+    bs = Get_Point_Values(b)
+    ns = length(as)
+    product = Vector{Float64}(undef, ns)
+    @inbounds for i in 1:ns
+        product[i] = as[i] * bs[i]
+    end
+    return product
+end
+function Internal_Product(a::GradEFGFunction, b::GradEFGFunction)
+    as = a.grads
+    bs = b.grads
+    ns = length(as)
+    product = Vector{Float64}(undef, ns)
+    @inbounds for i in 1:ns
+        product[i] = dot(as[i], bs[i])
+    end
+    return product
+end
+#=struct ∫
+    expr::Function
+end
+∫(op) = ∫(() -> op)
+function Local_Assembler(op::∫)
+    return op.expr()   # aquí se evalúa
+end
+function Bilinear_Operator(Operation::Function, F::EFGFunction, G::EFGFunction)
+    # Creamos un closure que reemplaza simbólicamente f -> F y g -> G
+    op = Operation(F, G)
+    return Local_Assembler(op)
+end=#
+struct Integrand
+  object
+end
+const ∫ = Integrand
+function Integrate(a, b::DomainMeasure)
+gs=b.gs
+jac=gs[:,end]
+weight=gs[:,end-1]
+ return a .* (jac .* weight)
+end
+import Base:*
+(*)(a::Integrand, b::DomainMeasure) = Integrate(a.object, b)
+import Base:⋅
+(⋅)(a::EFGFunction, b::EFGFunction) = Internal_Product(a, b)
+(⋅)(a::GradEFGFunction, b::GradEFGFunction) = Internal_Product(a, b)
