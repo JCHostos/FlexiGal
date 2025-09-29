@@ -27,6 +27,7 @@ function EFGFunction(field_nodal::Vector{Float64},
     end
     return EFGFunction(fdom, PHI, DPHI, tag, gs)
 end
+# Operations over EFGFunctions
 function Get_Point_Values(f::EFGFunction)
     ngauss = length(f.PHI)
     PHI = f.PHI
@@ -48,11 +49,18 @@ function ∇(f::EFGFunction)
     end
     return GradEFGFunction(grads)
 end
-struct GradDomainMeasure
+# Operations over EFGMeasures
+struct GradEFGMeasure
     DPHI::Vector{Matrix{Float64}}
 end
-function ∇(dm::DomainMeasure)
-    return GradDomainMeasure(dm.DPHI)
+function ∇(EFGm::EFGMeasure)
+    return GradEFGMeasure(EFGm.DPHI)
+end
+function Point_Node_EFGMeasure(EFGm::EFGMeasure, ind::Int, a::Int)
+    return EFGm.PHI[ind][a]
+end
+function Point_Node_GradEFGMeasure(GradEFGm::GradEFGMeasure, ind::Int, a::Int)
+    return GradEFGm.DPHI[ind][a, :]
 end
 function Internal_Product(a::EFGFunction, b::EFGFunction)
     as = Get_Point_Values(a)
@@ -74,30 +82,36 @@ function Internal_Product(a::GradEFGFunction, b::GradEFGFunction)
     end
     return product
 end
-#=struct ∫
-    expr::Function
-end
-∫(op) = ∫(() -> op)
-function Local_Assembler(op::∫)
-    return op.expr()   # aquí se evalúa
-end
-function Bilinear_Operator(Operation::Function, F::EFGFunction, G::EFGFunction)
-    # Creamos un closure que reemplaza simbólicamente f -> F y g -> G
-    op = Operation(F, G)
-    return Local_Assembler(op)
-end=#
 struct Integrand
-  object
+    object
 end
 const ∫ = Integrand
-function Integrate(a, b::DomainMeasure)
-gs=b.gs
-jac=gs[:,end]
-weight=gs[:,end-1]
- return a .* (jac .* weight)
+struct SingleDomainMeasure
+weight::Float64
+jacobian::Float64
+coordg::Vector{Float64}
 end
-import Base:*
+# Domain Measure Operations
+function SingleDomainMeasure(Measure::DomainMeasure, ind::Int,dim::Int)
+    gs = Measure.gs
+    weight = gs[ind, end-1]
+    jacobian = gs[ind, end]
+    coordg = gs[ind,1:dim]
+    return SingleDomainMeasure(coordg,weight, jacobian)
+end
+# Integration Operations
+function Integrate(a, b::DomainMeasure)
+    gs = b.gs
+    jac = gs[:, end]
+    weight = gs[:, end-1]
+    return a .* (jac .* weight)
+end
+function Integrate(a,b::SingleDomainMeasure)
+    return a * (b.weight * b.jacobian)
+end
+import Base: *
 (*)(a::Integrand, b::DomainMeasure) = Integrate(a.object, b)
-import Base:⋅
+(*)(a::Integrand, b::SingleDomainMeasure) = Integrate(a.object, b)
+import Base: ⋅
 (⋅)(a::EFGFunction, b::EFGFunction) = Internal_Product(a, b)
 (⋅)(a::GradEFGFunction, b::GradEFGFunction) = Internal_Product(a, b)

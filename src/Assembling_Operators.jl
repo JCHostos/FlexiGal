@@ -92,3 +92,7 @@ function LOAD_VECTOR(dd, gs, PHI, DOM, nnod)
     Qpf = vec(Array(sparse(row, ones(Int, length(row)), val, nnod, 1)))
     return Qpf
 end
+#function Bilinear_Assembler(a::Function, b::EFGMeasure)
+    
+
+#end

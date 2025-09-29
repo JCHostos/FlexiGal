@@ -21,18 +21,17 @@ end
 struct EFGSpace
     domain::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
     boundary::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
+    nnodes::Int
 end
 function EFGSpace(model::EFGmodel,
     gs_list::Vector{Tuple{String,Matrix{Float64}}},
     dm::Matrix{Float64})
-
     x = model.x
     results_domain = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
     results_boundary = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
-
+     nnodes,dim = size(x)
     for (tag, gs) in gs_list
         conn = get_entity(model, tag)
-        dim = size(x, 2)
         gs_type = size(conn, 2) == 2^dim ? :domain : :boundary
 
         PHI, DPHI, DOM = SHAPE_FUN(gs, x, dm)
@@ -43,7 +42,7 @@ function EFGSpace(model::EFGmodel,
             results_boundary[tag] = (PHI, DPHI, DOM)
         end
     end
-    return EFGSpace(results_domain, results_boundary)
+    return EFGSpace(results_domain, results_boundary, nnodes)
 end
 # Defining Influence Domains (Ongoing Development)
 function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dmax::Float64)
@@ -64,15 +63,12 @@ function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dma
     return dm
 end
 # Beta Version for Assembling EFG Matrices and Vectors
-function AssembleEFG(model,
-    Measures::Union{Tuple{String,Matrix{Float64}},
+function AssembleEFG(Measures::Union{Tuple{String,Matrix{Float64}},
         AbstractVector{<:Tuple{String,Matrix{Float64}}}},
     Shape_Functions::EFGSpace,
     matrix_type::String; prop=1.0)
-
     measures_list = isa(Measures, Tuple) ? [Measures] : Measures
-    nnod = size(model.x, 1)
-
+    nnodes = Shape_Functions.nnodes
     all_gs = Matrix{Float64}(undef, 0, size(first(measures_list)[2], 2))
     all_PHI = Vector{Vector{Float64}}()
     all_DPHI = Vector{Matrix{Float64}}()
@@ -96,35 +92,47 @@ function AssembleEFG(model,
     end
 
     if matrix_type == "Laplacian"
-        return COND_MATRIX(prop, all_gs, all_DPHI, all_DOM, nnod)
+        return COND_MATRIX(prop, all_gs, all_DPHI, all_DOM, nnodes)
     elseif matrix_type == "Mass"
-        return CAP_MATRIX(prop, all_gs, all_PHI, all_DOM, nnod)
+        return CAP_MATRIX(prop, all_gs, all_PHI, all_DOM, nnodes)
     elseif matrix_type == "Load"
-        return LOAD_VECTOR(prop, all_gs, all_PHI, all_DOM, nnod)
+        return LOAD_VECTOR(prop, all_gs, all_PHI, all_DOM, nnodes)
     else
         error("Matrix Type '$matrix_type' no recognised. Please use 'Laplacian', 'Mass' or 'Load'.")
     end
 end
 struct DomainMeasure
     gs::Matrix{Float64}
+end
+function Domain_Measure(
+    Measures::Union{Tuple{String,Matrix{Float64}},
+        AbstractVector{<:Tuple{String,Matrix{Float64}}}}
+)
+    measures_list = isa(Measures, Tuple) ? [Measures] : Measures
+
+    all_gs = Matrix{Float64}(undef, 0, size(first(measures_list)[2], 2))
+    for (_, gs) in measures_list
+        all_gs = vcat(all_gs, gs)
+    end
+    return DomainMeasure(all_gs)
+end
+struct EFGMeasure
     PHI::Vector{Vector{Float64}}
     DPHI::Vector{Matrix{Float64}}
     DOM::Vector{Vector{Int}}
+    nnodes::Int
 end
-include("Fields_Operations.jl")
-export ⋅
-function Domain_Measure(
+function EFG_Measure(
     Measures::Union{Tuple{String,Matrix{Float64}},
         AbstractVector{<:Tuple{String,Matrix{Float64}}}},
     Shape_Functions::EFGSpace
 )
     measures_list = isa(Measures, Tuple) ? [Measures] : Measures
 
-    all_gs = Matrix{Float64}(undef, 0, size(first(measures_list)[2], 2))
     all_PHI = Vector{Vector{Float64}}()
     all_DPHI = Vector{Matrix{Float64}}()
     all_DOM = Vector{Vector{Int}}()
-    for (tag, gs) in measures_list
+    for (tag, _) in measures_list
         # Buscar en domain o boundary
         shape =
             if haskey(Shape_Functions.domain, tag)
@@ -136,15 +144,12 @@ function Domain_Measure(
             end
 
         PHI, DPHI, DOM = shape
-        all_gs = vcat(all_gs, gs)
         append!(all_PHI, PHI)
         append!(all_DPHI, DPHI)
         append!(all_DOM, DOM)
+        nnodes = Shape_Functions.nnodes
     end
-    return DomainMeasure(all_gs, all_PHI, all_DPHI, all_DOM)
+    return EFGMeasure(all_PHI, all_DPHI, all_DOM, nnodes)
 end
-function Symbolyc_Assembler(δf::EFGSpace,f::EFGSpace,Measures::Union{Tuple{String,Matrix{Float64}},
-        AbstractVector{<:Tuple{String,Matrix{Float64}}}})
-return (Domain_Measure(Measures,f), Domain_Measure(Measures,δf))
-end
+include("Fields_Operations.jl")
 end
