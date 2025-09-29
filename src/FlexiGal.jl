@@ -2,9 +2,9 @@ module FlexiGal
 include("Geometry.jl")
 include("Shape_Functions.jl")
 include("Integration.jl")
-include("Assembling_Operators.jl")
 export create_model, BackgroundIntegration, EFGSpace, Influence_Domains, AssembleEFG, EFGFunction,
-    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫
+    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, *, EFG_Measure, Bilinear_Assembler
+
 
 function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
     conn = get_entity(model, tag)
@@ -29,7 +29,7 @@ function EFGSpace(model::EFGmodel,
     x = model.x
     results_domain = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
     results_boundary = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
-     nnodes,dim = size(x)
+    nnodes, dim = size(x)
     for (tag, gs) in gs_list
         conn = get_entity(model, tag)
         gs_type = size(conn, 2) == 2^dim ? :domain : :boundary
@@ -101,39 +101,22 @@ function AssembleEFG(Measures::Union{Tuple{String,Matrix{Float64}},
         error("Matrix Type '$matrix_type' no recognised. Please use 'Laplacian', 'Mass' or 'Load'.")
     end
 end
-struct DomainMeasure
-    gs::Matrix{Float64}
-end
-function Domain_Measure(
-    Measures::Union{Tuple{String,Matrix{Float64}},
-        AbstractVector{<:Tuple{String,Matrix{Float64}}}}
-)
-    measures_list = isa(Measures, Tuple) ? [Measures] : Measures
 
-    all_gs = Matrix{Float64}(undef, 0, size(first(measures_list)[2], 2))
-    for (_, gs) in measures_list
-        all_gs = vcat(all_gs, gs)
-    end
-    return DomainMeasure(all_gs)
-end
 struct EFGMeasure
     PHI::Vector{Vector{Float64}}
     DPHI::Vector{Matrix{Float64}}
     DOM::Vector{Vector{Int}}
+    gs::Matrix{Float64}
     nnodes::Int
 end
-function EFG_Measure(
-    Measures::Union{Tuple{String,Matrix{Float64}},
-        AbstractVector{<:Tuple{String,Matrix{Float64}}}},
-    Shape_Functions::EFGSpace
-)
+function EFG_Measure(Measures::Union{Tuple{String,Matrix{Float64}},
+        AbstractVector{<:Tuple{String,Matrix{Float64}}}}, Shape_Functions::EFGSpace)
     measures_list = isa(Measures, Tuple) ? [Measures] : Measures
-
+    all_gs = Matrix{Float64}(undef, 0, size(first(measures_list)[2], 2))
     all_PHI = Vector{Vector{Float64}}()
     all_DPHI = Vector{Matrix{Float64}}()
     all_DOM = Vector{Vector{Int}}()
-    for (tag, _) in measures_list
-        # Buscar en domain o boundary
+    for (tag, gs) in measures_list # Buscar en domain o boundary 
         shape =
             if haskey(Shape_Functions.domain, tag)
                 Shape_Functions.domain[tag]
@@ -142,14 +125,15 @@ function EFG_Measure(
             else
                 error("There are no shape functions for the tag '$tag'.")
             end
-
         PHI, DPHI, DOM = shape
+        all_gs = vcat(all_gs, gs)
         append!(all_PHI, PHI)
         append!(all_DPHI, DPHI)
         append!(all_DOM, DOM)
-        nnodes = Shape_Functions.nnodes
     end
-    return EFGMeasure(all_PHI, all_DPHI, all_DOM, nnodes)
+    nnodes = Shape_Functions.nnodes
+    return EFGMeasure(all_PHI, all_DPHI, all_DOM, all_gs, nnodes)
 end
 include("Fields_Operations.jl")
+include("Assembling_Operators.jl")
 end

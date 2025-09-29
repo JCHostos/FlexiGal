@@ -11,10 +11,14 @@ ngpts = 3
 Γ2 = BackgroundIntegration(model, "Bottom", ngpts)
 Measures = [Ω, Γ1, Γ2]
 Tspace = EFGSpace(model, Measures, dm)
-K = AssembleEFG(Ω, Tspace, "Laplacian"; prop=1)
+dΩ = EFG_Measure(Ω,Tspace)
 Γd = [Γ1, Γ2]
-Kp = AssembleEFG(Γd, Tspace, "Mass"; prop=1000)
-Q = AssembleEFG(Γ2, Tspace, "Load"; prop=5000) # Non Null Dirichlet BC T=5
+a(δT,T,dΩ)=∫(∇(δT)⋅∇(T))*dΩ
+K= Bilinear_Assembler(a,dΩ)
+dΓd = EFG_Measure(Γd,Tspace)
+a(δT,T,dΓd)=∫(1000.0*(δT⋅T))*dΓd
+Kp = Bilinear_Assembler(a,dΓd) 
+Q = AssembleEFG(Γ2, Tspace, "Load"; prop=5000.0) # Non Null Dirichlet BC T=5
 T = (K + Kp) \ Q;
 #Cálculo de Campo en puntos de Gauss (Pronto una función para esto en cualquier Tag donde haya Shape_Functions calculadas)
 Th=EFGFunction(T, Tspace, Ω)

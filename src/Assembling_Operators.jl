@@ -1,7 +1,7 @@
 using SparseArrays
 function COND_MATRIX(k, gs::Matrix{Float64}, DPHI::Vector{Matrix{Float64}}, DOM::Vector{Vector{Int}}, nnod::Int)
     numqc = length(DOM)
-    dim = size(DPHI[1],2)
+    dim = size(DPHI[1], 2)
     total_length = sum(x -> length(x)^2, DOM)
     row = Vector{Int}(undef, total_length)
     col = Vector{Int}(undef, total_length)
@@ -42,7 +42,6 @@ function COND_MATRIX(k, gs::Matrix{Float64}, DPHI::Vector{Matrix{Float64}}, DOM:
         pos += nvec^2
     end
     K = sparse(row, col, val, nnod, nnod)
-    K = 0.5 * (K' + K)
     return K
 end
 
@@ -71,7 +70,6 @@ function CAP_MATRIX(ρc, gs::Matrix{Float64}, PHI::Vector{Vector{Float64}}, DOM:
         pos += nvec^2
     end
     C = sparse(row, col, val, nnod, nnod)
-    C = 0.5 * (C' + C)
     return C
 end
 
@@ -80,19 +78,44 @@ function LOAD_VECTOR(dd, gs, PHI, DOM, nnod)
     total_length = sum(length.(DOM))
     row = Vector{Int}(undef, total_length)
     val = Vector{Float64}(undef, total_length)
-    pos = 1 
+    pos = 1
     @inbounds for ind in 1:numqc
         n = length(DOM[ind])
         w = gs[ind, end]
         detJ = gs[ind, end-1]
         val[pos:pos+n-1] = PHI[ind] * dd * detJ * w
         row[pos:pos+n-1] = DOM[ind]
-         pos += n
+        pos += n
     end
     Qpf = vec(Array(sparse(row, ones(Int, length(row)), val, nnod, 1)))
     return Qpf
 end
-#function Bilinear_Assembler(a::Function, b::EFGMeasure)
-    
-
-#end
+function Bilinear_Assembler(f::Function, dX::EFGMeasure)
+    _, _, DOM, nnodes = dX.PHI, dX.DPHI, dX.DOM, dX.nnodes
+    numqc = length(DOM)
+    dim = size(dX.gs, 2) - 2
+    total_length = sum(x -> length(x)^2, DOM)
+    row = Vector{Int}(undef, total_length)
+    col = Vector{Int}(undef, total_length)
+    val = Vector{Float64}(undef, total_length)
+    pos = 1
+    @inbounds for ind in 1:numqc
+        dom = DOM[ind]
+        nvec = length(dom)
+        dx = SingleDomainMeasure(dX, ind, dim)
+        row[pos:pos+nvec^2-1] = repeat(dom, inner=nvec)
+        col[pos:pos+nvec^2-1] = repeat(dom, outer=nvec)
+        Oloc = Array{Float64}(undef, nvec, nvec)
+        @inbounds for a in 1:nvec
+            aMeasure = SingleEFGMeasure(dX, ind, a)
+            @simd for b in 1:nvec
+                bMeasure = SingleEFGMeasure(dX, ind, b)
+                Oloc[a, b] = f(aMeasure, bMeasure, dx)
+            end
+        end
+        val[pos:pos+nvec^2-1] = vec(Oloc)
+        pos += nvec^2
+    end
+    O = sparse(row, col, val, nnodes, nnodes) 
+    return O
+end

@@ -9,12 +9,16 @@ ngpts = 3
 Ω = BackgroundIntegration(model, "Domain", ngpts)
 Γ = BackgroundIntegration(model, "Boundary", ngpts)
 Measures = [Ω, Γ]
-Shape_Functions = EFGSpace(model, Measures, dm)
-K = AssembleEFG(Ω, Shape_Functions, "Laplacian"; prop=1)
-Kp = AssembleEFG(Γ, Shape_Functions, "Mass"; prop=1000)
-Q = AssembleEFG(Ω, Shape_Functions, "Load"; prop=5000) # Uniform Source
+Tspace = EFGSpace(model, Measures, dm)
+dΩ = EFG_Measure(Ω,Tspace)
+a(δT,T,dΩ)=∫(∇(δT)⋅∇(T))*dΩ
+K= Bilinear_Assembler(a,dΩ)
+dΓ = EFG_Measure(Γ,Tspace)
+a(δT,T,dΓ)=∫(1000.0*(δT⋅T))*dΓ
+Kp = Bilinear_Assembler(a,dΓ) 
+Q = AssembleEFG(Ω, Tspace, "Load"; prop=5000) # Uniform Source
 T = (K + Kp) \ Q;
-Th=EFGFunction(T, Shape_Functions, Ω)
+Th=EFGFunction(T, Tspace, Ω)
 Tgauss=Get_Point_Values(Th)
 ∇Th=∇(Th)
 gs=Ω[2]
