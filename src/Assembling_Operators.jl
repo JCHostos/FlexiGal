@@ -90,8 +90,7 @@ function LOAD_VECTOR(dd, gs, PHI, DOM, nnod)
     Qpf = vec(Array(sparse(row, ones(Int, length(row)), val, nnod, 1)))
     return Qpf
 end
-function Bilinear_Assembler(f::Function, dX::EFGMeasure)
-    #test=Integrate(f, AssembleMeasure(dΩ))
+function Bilinear_Assembler(f::Function,dX::EFGMeasure)
     _, _, DOM, nnodes = dX.PHI, dX.DPHI, dX.DOM, dX.nnodes
     numqc = length(DOM)
     dim = size(dX.gs, 2) - 2
