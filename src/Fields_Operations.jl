@@ -115,19 +115,18 @@ end
     return SingleDomainMeasure(coordg, weight, jacobian)
 end
 # Integration Operations
-function Integrate(a, b::EFGMeasure)
+@inline function Integrate(a::Integrand, b::EFGMeasure)
     gs = b.gs
     jac = gs[:, end]
     weight = gs[:, end-1]
-    return a .* (jac .* weight)
+    return a.object .* (jac .* weight)
 end
-function Integrate(a, b::SingleDomainMeasure)
-    return a * (b.weight * b.jacobian)
+@inline function Integrate(a::Integrand, b::SingleDomainMeasure)
+    return a.object * (b.weight * b.jacobian)
 end
-
 import Base: *
-(*)(a::Integrand, b::EFGMeasure) = Integrate(a.object, b)
-(*)(a::Integrand, b::SingleDomainMeasure) = Integrate(a.object, b)
+(*)(a::Integrand, b::EFGMeasure) = Integrate(a, b)
+(*)(a::Integrand, b::SingleDomainMeasure) = Integrate(a, b)
 (*)(a::Union{Float64,Int}, b::EFGFunction) = a * Get_Point_Values(b)
 (*)(a::EFGFunction, b::Union{Float64,Int}) = Get_Point_Values(a) * b
 (*)(a::Union{Float64,Int}, b::GradEFGFunction) = a * b.grads
