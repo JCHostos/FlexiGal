@@ -1,8 +1,8 @@
 using FlexiGal
-using Plots
+using GLMakie
 Domain = (1.0, 1.0)
-Divisions = (100, 100)
-dmax = 1.65
+Divisions = (100,100)
+dmax = 1.5
 model = create_model(Domain, Divisions)
 dm = Influence_Domains(model, Domain, Divisions, dmax)
 ngpts = 3
@@ -21,4 +21,7 @@ Th = EFGFunction(T, Tspace, dΩ)
 Tgauss = Get_Point_Values(Th)
 ∇Th = ∇(Th)
 gs = dΩ.gs
-scatter(gs[:, 1], gs[:, 2], zcolor=Tgauss, color=:jet, marker=:square, markersize=1, markerstrokecolor=:transparent, markerstrokewidth=0, xlabel="X", ylabel="Y", title="Temperature Colormap")
+fig = Figure()
+ax = Axis(fig[1,1], aspect=Domain[2]/Domain[1])
+scatter!(ax, gs[:,1], gs[:,2]; color=Tgauss, markersize=4, colormap=:jet)
+fig

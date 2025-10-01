@@ -17,7 +17,7 @@ function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
     elseif size(conn, 2) == 2^(dim - 1)
         gs = egauss_bound(model.x, conn, gauss)
     end
-    conn=nothing
+    conn= nothing
     return DomainMeasure(tag, gs)
 end
 function Merge_Measures(model::EFGmodel, measures::Vector{DomainMeasure}; tag::String)
@@ -57,7 +57,7 @@ function Merge_Measures(model::EFGmodel, measures::Vector{DomainMeasure}; tag::S
     # 5. Nuevo model actualizado
     new_model = EFGmodel(model.x, model.conn, new_entities,
                          model.dim, model.ncells, model.nnodes)
-
+     conn_merged=gs_merged=nothing
     return new_measure, new_model
 end
 # Constructing Shape Functions given model, Measures for Integration and Influence domains
@@ -89,15 +89,8 @@ function EFGSpace(model::EFGmodel, gs_list::Union{DomainMeasure, Vector{DomainMe
         else
             results_boundary[tag] = (PHI, DPHI, DOM)
         end
-
-        # Liberar memoria temporal
-        conn = nothing
-        PHI = nothing
-        DPHI = nothing
-        DOM = nothing
     end
     gs_list=nothing
-    GC.gc()  # opcional, aunque Julia hace buena gestión de memoria
 
     return EFGSpace(results_domain, results_boundary, nnodes)
 end
@@ -154,7 +147,6 @@ function AssembleEFG(
 
     # liberar referencias
     PHI = nothing; DPHI = nothing; DOM = nothing; gs = nothing
-    GC.gc()
 
     if matrix_type == "Laplacian"
         return COND_MATRIX(prop, all_gs, all_DPHI, all_DOM, nnodes)
@@ -201,7 +193,6 @@ function EFG_Measure(measures::Union{DomainMeasure, AbstractVector{<:DomainMeasu
 
     # Limpiar referencias temporales
     PHI=DPHI=DOM=nothing
-    GC.gc()
     nnodes = Shape_Functions.nnodes
     return EFGMeasure(all_PHI, all_DPHI, all_DOM, nnodes)
 end

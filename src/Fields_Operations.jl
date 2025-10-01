@@ -3,14 +3,12 @@ struct EFGFunction
     fdom::Vector{Vector{Float64}}
     PHI::Vector{Vector{Float64}}
     DPHI::Vector{Matrix{Float64}}
-    tag::String
-    Measure::Matrix{Float64}
 end
 
 function EFGFunction(field_nodal::Vector{Float64},
     Shape_Functions::EFGSpace,
     Measure::DomainMeasure)
-    tag, gs = Measure.tag, Measure.gs
+    tag =Measure.tag
     # Buscar funciones de forma para ese tag
     if haskey(Shape_Functions.domain, tag)
         PHI, DPHI, DOM = Shape_Functions.domain[tag]
@@ -25,7 +23,7 @@ function EFGFunction(field_nodal::Vector{Float64},
     @inbounds for i in 1:ngauss
         fdom[i] = field_nodal[DOM[i]]
     end
-    return EFGFunction(fdom, PHI, DPHI, tag, gs)
+    return EFGFunction(fdom, PHI, DPHI)
 end
 # Operations over EFGFunctions
 function Get_Point_Values(f::EFGFunction)
