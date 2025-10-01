@@ -1,7 +1,7 @@
 using FlexiGal
 using Plots
 Domain = (1.0, 1.0)
-Divisions = (100, 100)
+Divisions = (5, 5)
 dmax = 1.65
 model = create_model(Domain, Divisions)
 dm = Influence_Domains(model, Domain, Divisions, dmax)

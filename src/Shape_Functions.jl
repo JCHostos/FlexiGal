@@ -148,9 +148,9 @@ function Improved_Moving_Least_Squares(gpos, x, v, dm)
             0 0 1 gpos[1]]
     else
         QQg = [1 gpos' gpos[1]*gpos[2] gpos[1]*gpos[3] gpos[2]*gpos[3] gpos[1]*gpos[2]*gpos[3];
-            0 1 0 0 gpos[2] gpos[3];
-            0 0 1 0 gpos[1] gpos[3];
-            0 0 0 1 gpos[1] gpos[2]]
+            0 1 0 0 gpos[2] gpos[3] 0 gpos[2]*gpos[3];
+            0 0 1 0 gpos[1] 0 gpos[3] gpos[1]*gpos[3];
+            0 0 0 1 0 gpos[1] gpos[2] gpos[1]*gpos[2]]
     end
 
     # Gram-Schmidt ortogonalizado

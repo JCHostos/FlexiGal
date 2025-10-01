@@ -24,12 +24,16 @@ struct EFGSpace
     nnodes::Int
 end
 function EFGSpace(model::EFGmodel,
-    gs_list::Vector{Tuple{String,Matrix{Float64}}},
-    dm::Matrix{Float64})
+                  gs_list::Union{Tuple{String,Matrix{Float64}}, Vector{Tuple{String,Matrix{Float64}}}},
+                  dm::Matrix{Float64})
+    # Forzar que gs_list siempre sea un vector
+    gs_list = isa(gs_list, Tuple) ? [gs_list] : gs_list
+
     x = model.x
     results_domain = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
     results_boundary = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
     nnodes, dim = size(x)
+
     for (tag, gs) in gs_list
         conn = get_entity(model, tag)
         gs_type = size(conn, 2) == 2^dim ? :domain : :boundary
@@ -42,6 +46,7 @@ function EFGSpace(model::EFGmodel,
             results_boundary[tag] = (PHI, DPHI, DOM)
         end
     end
+
     return EFGSpace(results_domain, results_boundary, nnodes)
 end
 # Defining Influence Domains (Ongoing Development)
