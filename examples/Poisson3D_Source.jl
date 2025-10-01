@@ -1,7 +1,7 @@
 using FlexiGal
 using GLMakie
 Domain = (1.0, 1.0, 1.0)
-Divisions = (15, 15, 15)
+Divisions = (20, 20, 20)
 dmax = 1.35
 model = create_model(Domain, Divisions)
 dm = Influence_Domains(model, Domain, Divisions, dmax)
