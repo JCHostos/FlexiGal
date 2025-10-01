@@ -155,7 +155,7 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
         int_faces = Dict("Internal_Faces" => connintfaces)
         entities[:int_faces] = int_faces
         # 2) Tags for External Edges
-        nedges=size(connextedges, 1)
+        nedges = size(connextedges, 1)
         leftbottom_edges = Matrix{Int}(undef, Ny, 2)
         rightbottom_edges = Matrix{Int}(undef, Ny, 2)
         lefttop_edges = Matrix{Int}(undef, Ny, 2)
@@ -209,7 +209,7 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
                 tbai += 1
             elseif zm > Lz - tol && ym > Ly - tol
                 topfront_edges[tfi, :] .= (n1, n2)
-                tfi += 1    
+                tfi += 1
             end
         end
         ext_edges = Dict(
@@ -234,6 +234,32 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
         faces_dict = Dict("Domain" => conn)
         entities[:volumes] = faces_dict
     end
+    # Caras (faces) temporales
+    connintfaces = nothing
+    connextfaces = nothing
+    left_faces = nothing
+    right_faces = nothing
+    bottom_faces = nothing
+    top_faces = nothing
+    back_faces = nothing
+    front_faces = nothing
+
+    # Aristas (edges) temporales
+    connintedges = nothing
+    connextedges = nothing
+    leftbottom_edges = nothing
+    rightbottom_edges = nothing
+    lefttop_edges = nothing
+    righttop_edges = nothing
+    leftback_edges = nothing
+    rightback_edges = nothing
+    leftfront_edges = nothing
+    rightfront_edges = nothing
+    bottomback_edges = nothing
+    bottomfront_edges = nothing
+    toptback_edges = nothing
+    topfront_edges = nothing
+    GC.gc()
     # ------------------------------
     # Return model
     # ------------------------------

@@ -9,8 +9,8 @@ end
 
 function EFGFunction(field_nodal::Vector{Float64},
     Shape_Functions::EFGSpace,
-    Measure::Tuple{String,Matrix{Float64}})
-    tag, gs = Measure
+    Measure::DomainMeasure)
+    tag, gs = Measure.tag, Measure.gs
     # Buscar funciones de forma para ese tag
     if haskey(Shape_Functions.domain, tag)
         PHI, DPHI, DOM = Shape_Functions.domain[tag]
@@ -105,7 +105,7 @@ const ∫ = Integrand
 # Domain Measure Operations
 # Integration Operations
 # Caso 1: a.object es un vector numérico
-@inline function Integrate(a::Integrand{<:AbstractVector}, b::EFGMeasure)
+@inline function Integrate(a::Integrand{<:AbstractVector}, b::DomainMeasure)
     gs = b.gs
     jac = gs[:, end]
     weight = gs[:, end-1]
@@ -113,11 +113,11 @@ const ∫ = Integrand
 end
 
 # Caso 2: a.object es cualquier otra cosa (función, simbólico, etc.)
-@inline function Integrate(a::Integrand, b::EFGMeasure)
+@inline function Integrate(a::Integrand, b::DomainMeasure)
     return (a.object, b)   # integración diferida para Bilinear_Assembler
 end
 import Base: *
-(*)(a::Integrand, b::EFGMeasure) = Integrate(a, b)
+(*)(a::Integrand, b::DomainMeasure) = Integrate(a, b)
 (*)(a::Union{Float64,Int}, b::EFGFunction) = a * Get_Point_Values(b)
 (*)(a::EFGFunction, b::Union{Float64,Int}) = Get_Point_Values(a) * b
 (*)(a::Union{Float64,Int}, b::GradEFGFunction) = a * b.grads

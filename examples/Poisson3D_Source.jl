@@ -1,8 +1,8 @@
 using FlexiGal
 using Plots
-Domain = (1.0, 1.0)
-Divisions = (10, 10)
-dmax = 1.65
+Domain = (1.0, 1.0, 1.0)
+Divisions = (20, 20, 20)
+dmax = 1.35
 model = create_model(Domain, Divisions)
 dm = Influence_Domains(model, Domain, Divisions, dmax)
 ngpts = 3
@@ -22,4 +22,7 @@ Th = EFGFunction(T, Tspace, Ω)
 Tgauss = Get_Point_Values(Th)
 ∇Th = ∇(Th)
 gs = Ω[2]
-scatter(gs[:, 1], gs[:, 2], Tgauss, color=:blue, marker=:square, markersize=1, markerstrokecolor=:transparent, markerstrokewidth=0, xlabel="X", ylabel="Y", title="Temperature")
+fig = Figure()
+ax = Axis3(fig[1,1], aspect=Domain)
+scatter!(ax, gs[:,1], gs[:,2], gs[:,3]; color=Tgauss, markersize=4, colormap=:jet)
+fig
