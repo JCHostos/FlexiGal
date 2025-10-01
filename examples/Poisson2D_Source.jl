@@ -11,11 +11,11 @@ ngpts = 3
 Measures = [Ω, Γ]
 Tspace = EFGSpace(model, Measures, dm)
 dΩ = EFG_Measure(Ω, Tspace)
-a(δT, T, dΩ) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
-K = Bilinear_Assembler(a, dΩ)
+a(δT, T) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
+K = Bilinear_Assembler(a)
 dΓ = EFG_Measure(Γ, Tspace)
-a(δT, T, dΓ) = ∫(δT * (1000 * T)) * dΓ
-Kp = Bilinear_Assembler(a, dΓ)
+a(δT, T) = ∫(δT * (1000 * T)) * dΓ
+Kp = Bilinear_Assembler(a)
 Q = AssembleEFG(Ω, Tspace, "Load"; prop=5000) # Uniform Source
 T = (K + Kp) \ Q;
 Th = EFGFunction(T, Tspace, Ω)

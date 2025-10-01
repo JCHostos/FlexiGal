@@ -13,14 +13,13 @@ Measures = [Ω, Γ1, Γ2]
 Tspace = EFGSpace(model, Measures, dm)
 dΩ = EFG_Measure(Ω, Tspace)
 Γd = [Γ1, Γ2]
-a(δT, T, dΩ) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
-K = Bilinear_Assembler(a, dΩ)
+a(δT, T) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
+K = Bilinear_Assembler(a)
 dΓd = EFG_Measure(Γd, Tspace)
-a(δT, T, dΓd) = ∫(δT * (1000 * T)) * dΓd
-Kp = Bilinear_Assembler(a, dΓd)
+a(δT, T) = ∫(δT * (1000 * T)) * dΓd
+Kp = Bilinear_Assembler(a)
 Q = AssembleEFG(Γ2, Tspace, "Load"; prop=5000.0) # Non Null Dirichlet BC T=5
 T = (K + Kp) \ Q;
-#Cálculo de Campo en puntos de Gauss (Pronto una función para esto en cualquier Tag donde haya Shape_Functions calculadas)
 Th = EFGFunction(T, Tspace, Ω)
 Tgauss = Get_Point_Values(Th)
 ∇Th = ∇(Th)

@@ -90,10 +90,12 @@ function LOAD_VECTOR(dd, gs, PHI, DOM, nnod)
     Qpf = vec(Array(sparse(row, ones(Int, length(row)), val, nnod, 1)))
     return Qpf
 end
-function Bilinear_Assembler(f::Function,dX::EFGMeasure)
-    _, _, DOM, nnodes = dX.PHI, dX.DPHI, dX.DOM, dX.nnodes
+function Bilinear_Assembler(f::Function)
+    _,dX=f(1,1)
+    gs,DOM,nnodes = dX.gs ,dX.DOM, dX.nnodes
     numqc = length(DOM)
-    dim = size(dX.gs, 2) - 2
+    dim = size(gs, 2) - 2
+    coord=gs[:,1:dim]
     total_length = sum(x -> length(x)^2, DOM)
     row = Vector{Int}(undef, total_length)
     col = Vector{Int}(undef, total_length)
@@ -102,15 +104,15 @@ function Bilinear_Assembler(f::Function,dX::EFGMeasure)
     @inbounds for ind in 1:numqc
         dom = DOM[ind]
         nvec = length(dom)
-        dx = SingleDomainMeasure(dX, ind, dim)
+        Oloc = Array{Float64}(undef, nvec, nvec)
         row[pos:pos+nvec^2-1] = repeat(dom, inner=nvec)
         col[pos:pos+nvec^2-1] = repeat(dom, outer=nvec)
-        Oloc = Array{Float64}(undef, nvec, nvec)
         @inbounds for a in 1:nvec
             aMeasure = SingleEFGMeasure(dX, ind, a)
             @simd for b in 1:nvec
                 bMeasure = SingleEFGMeasure(dX, ind, b)
-                Oloc[a, b] = f(aMeasure, bMeasure, dx)
+                Oloc[a, b],_ = f(aMeasure, bMeasure)
+                Oloc[a,b] = Oloc[a,b]*gs[ind,end]*gs[ind,end-1]
             end
         end
         val[pos:pos+nvec^2-1] = vec(Oloc)

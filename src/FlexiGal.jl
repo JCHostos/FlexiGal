@@ -3,7 +3,7 @@ include("Geometry.jl")
 include("Shape_Functions.jl")
 include("Integration.jl")
 export create_model, BackgroundIntegration, EFGSpace, Influence_Domains, AssembleEFG, EFGFunction,
-    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, *, EFG_Measure, Bilinear_Assembler,AssembleMeasure
+    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, *, EFG_Measure, Bilinear_Assembler
 
 
 function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)

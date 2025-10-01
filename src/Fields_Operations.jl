@@ -56,6 +56,7 @@ end
 @inline function ∇(EFGm::EFGMeasure)
     return GradEFGMeasure(EFGm.DPHI)
 end
+@inline ∇(A::Int)=0
 struct SingleEFGMeasure
     phi::Float64
     dphi::Vector{Float64}
@@ -97,36 +98,26 @@ end
 @inline function Internal_Product(a::GradSingleEFGMeasure, b::GradSingleEFGMeasure)
     return dot(a.dphi, b.dphi)
 end
-struct Integrand
-    object
+struct Integrand{T}
+    object::T
 end
 const ∫ = Integrand
-struct SingleDomainMeasure
-    coordg::Vector{Float64}
-    weight::Float64
-    jacobian::Float64
-end
 # Domain Measure Operations
-@inline function SingleDomainMeasure(Measure::EFGMeasure, ind::Int, dim::Int)
-    gs = Measure.gs
-    weight = gs[ind, end-1]
-    jacobian = gs[ind, end]
-    coordg = gs[ind, 1:dim]
-    return SingleDomainMeasure(coordg, weight, jacobian)
-end
 # Integration Operations
-@inline function Integrate(a::Integrand, b::EFGMeasure)
+# Caso 1: a.object es un vector numérico
+@inline function Integrate(a::Integrand{<:AbstractVector}, b::EFGMeasure)
     gs = b.gs
     jac = gs[:, end]
     weight = gs[:, end-1]
-    return a.object .* (jac .* weight)
+    return a.object .* (jac .* weight)   # integración “vieja”
 end
-@inline function Integrate(a::Integrand, b::SingleDomainMeasure)
-    return a.object * (b.weight * b.jacobian)
+
+# Caso 2: a.object es cualquier otra cosa (función, simbólico, etc.)
+@inline function Integrate(a::Integrand, b::EFGMeasure)
+    return (a.object, b)   # integración diferida para Bilinear_Assembler
 end
 import Base: *
 (*)(a::Integrand, b::EFGMeasure) = Integrate(a, b)
-(*)(a::Integrand, b::SingleDomainMeasure) = Integrate(a, b)
 (*)(a::Union{Float64,Int}, b::EFGFunction) = a * Get_Point_Values(b)
 (*)(a::EFGFunction, b::Union{Float64,Int}) = Get_Point_Values(a) * b
 (*)(a::Union{Float64,Int}, b::GradEFGFunction) = a * b.grads
@@ -142,3 +133,5 @@ import Base: ⋅
 (⋅)(a::GradEFGFunction, b::GradEFGFunction) = Internal_Product(a, b)
 (⋅)(a::SingleEFGMeasure, b::SingleEFGMeasure) = Internal_Product(a, b)
 (⋅)(a::GradSingleEFGMeasure, b::GradSingleEFGMeasure) = Internal_Product(a, b)
+Internal_Product(a::Int,b::Int)=a*b
+(⋅)(a::Int, b::Int) = Internal_Product(a, b)

@@ -232,7 +232,7 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
         entities[:int_edges] = int_edges
         # 3) Volumes (3D Cells)
         faces_dict = Dict("Domain" => conn)
-        entities[:faces] = faces_dict
+        entities[:volumes] = faces_dict
     end
     # ------------------------------
     # Return model
