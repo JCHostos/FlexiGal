@@ -10,11 +10,11 @@ dΩ = BackgroundIntegration(model, "Domain", ngpts)
 dΓ1 = BackgroundIntegration(model, "Left", ngpts)
 dΓ2 = BackgroundIntegration(model, "Bottom", ngpts)
 @time Tspace = EFGSpace(model, [dΩ, dΓ1, dΓ2], dm)
-k(x)=1+19*x[1]^2-x[2]^2
-a(δT, T) = ∫(∇(δT) ⋅ (k*∇(T))) * dΩ
+k=5.0
+a(δT, T) = ∫(∇(δT)⋅(k*∇(T)))dΩ
 @time K = Bilinear_Assembler(a,Tspace)
 dΓd=[dΓ1,dΓ2]
-a(δT, T) = ∫(δT * (1000 * T)) * dΓd
+a(δT, T) = ∫(δT * (1000 * T))dΓd
 Kp = Bilinear_Assembler(a,Tspace)
 Q = AssembleEFG(dΓ2, Tspace, "Load"; prop=5000.0) # Non Null Dirichlet BC T=5
 @time T = (K + Kp) \ Q;

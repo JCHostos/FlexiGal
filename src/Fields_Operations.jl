@@ -164,6 +164,7 @@ import Base: ∘
 (∘)(a::EFGFunction,b::Function) = Composition(a,b)
 
 import Base: *
+()(a::Integrand, b::Union{DomainMeasure,AbstractVector{DomainMeasure}}) = Integrate(a, b)
 (*)(a::Integrand, b::Union{DomainMeasure,AbstractVector{DomainMeasure}}) = Integrate(a, b)
 (*)(a::Union{Float64,Int}, b::EFGFunction) = a * Get_Point_Values(b)
 (*)(a::EFGFunction, b::Union{Float64,Int}) = Get_Point_Values(a) * b
