@@ -1,7 +1,7 @@
 using FlexiGal
 using GLMakie
 Domain = (1.0, 1.0)
-Divisions = (60,60)
+Divisions = (50,50)
 dmax = 1.5
 model = create_model(Domain, Divisions)
 dm = Influence_Domains(model, Domain, Divisions, dmax)
@@ -10,7 +10,8 @@ dΩ = BackgroundIntegration(model, "Domain", ngpts)
 dΓ1 = BackgroundIntegration(model, "Left", ngpts)
 dΓ2 = BackgroundIntegration(model, "Bottom", ngpts)
 Tspace = EFGSpace(model, [dΩ, dΓ1, dΓ2], dm)
-a(δT, T) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
+k(x)=1
+a(δT, T) = ∫(∇(δT) ⋅ (k*∇(T))) * dΩ
 K = Bilinear_Assembler(a,Tspace)
 dΓd=[dΓ1,dΓ2]
 a(δT, T) = ∫(δT * (1000 * T)) * dΓd

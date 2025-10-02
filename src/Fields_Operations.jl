@@ -6,17 +6,10 @@ struct EFGFunction
 end
 
 function EFGFunction(field_nodal::Vector{Float64},
-    Shape_Functions::EFGSpace,
+    Space::EFGSpace,
     Measure::DomainMeasure)
-    tag =Measure.tag
-    # Buscar funciones de forma para ese tag
-    if haskey(Shape_Functions.domain, tag)
-        PHI, DPHI, DOM = Shape_Functions.domain[tag]
-    elseif haskey(Shape_Functions.boundary, tag)
-        PHI, DPHI, DOM = Shape_Functions.boundary[tag]
-    else
-        error("No se encontraron funciones de forma para el tag '$tag'.")
-    end
+    Shapes = EFG_Measure(Measure, Space)
+    PHI, DPHI, DOM = Shapes.PHI, Shapes.DPHI, Shapes.DOM
     # Construir Tdom en los puntos de Gauss
     ngauss = length(DOM)
     fdom = Vector{Vector{Float64}}(undef, ngauss)
@@ -54,21 +47,25 @@ end
 @inline function ∇(EFGm::EFGMeasure)
     return GradEFGMeasure(EFGm.DPHI)
 end
-@inline ∇(A::Int)=0
+@inline ∇(::Nothing) = nothing
 struct SingleEFGMeasure
     phi::Float64
     dphi::Vector{Float64}
+    ind::Int
+    coord::Vector{Float64}
 end
-@inline function SingleEFGMeasure(EFGm::EFGMeasure, ind::Int, a::Int)
+@inline function SingleEFGMeasure(EFGm::EFGMeasure, ind::Int, a::Int,coord::Vector{Float64})
     phi = EFGm.PHI[ind][a]
     dphi = EFGm.DPHI[ind][a, :]
-    return SingleEFGMeasure(phi, dphi)
+    return SingleEFGMeasure(phi, dphi, ind, coord)
 end
 struct GradSingleEFGMeasure
     dphi::Vector{Float64}
+    ind::Int
+    coord::Vector{Float64}
 end
 @inline function ∇(SingleEFG::SingleEFGMeasure)
-    return GradSingleEFGMeasure(SingleEFG.dphi)
+    return GradSingleEFGMeasure(SingleEFG.dphi,SingleEFG.ind,SingleEFG.coord)
 end
 function Internal_Product(a::EFGFunction, b::EFGFunction)
     as = Get_Point_Values(a)
@@ -79,6 +76,29 @@ function Internal_Product(a::EFGFunction, b::EFGFunction)
         product[i] = as[i] * bs[i]
     end
     return product
+end
+@inline function Get_Point_Value(a::EFGFunction, ind::Int)
+    return dot(a.PHI[ind], a.fdom[ind])
+end
+@inline function Internal_Product(a::EFGFunction, b::SingleEFGMeasure)
+    phi, dphi, ind, coord = b.phi, b.dphi, b.ind, b.coord
+    as = Get_Point_Value(a, ind)
+    return SingleEFGMeasure(as * phi, dphi, ind, coord)
+end
+@inline function Internal_Product(a::EFGFunction, b::GradSingleEFGMeasure)
+    dphi, ind, coord = b.dphi, b.ind, b.coord
+    as = Get_Point_Value(a, ind)
+    return GradSingleEFGMeasure(as * dphi, ind, coord)
+end
+@inline function Internal_Product(a::Function, b::SingleEFGMeasure)
+    phi, dphi, ind, coord = b.phi, b.dphi, b.ind, b.coord
+    as = a(coord)
+    return SingleEFGMeasure(as * phi, dphi, ind, coord)
+end
+@inline function Internal_Product(a::Function, b::GradSingleEFGMeasure)
+    dphi, ind, coord = b.dphi, b.ind, b.coord
+    as = a(coord)
+    return GradSingleEFGMeasure(as * dphi, ind, coord)
 end
 function Internal_Product(a::GradEFGFunction, b::GradEFGFunction)
     as = a.grads
@@ -111,12 +131,12 @@ const ∫ = Integrand
 end
 
 # Caso 2: a.object es cualquier otra cosa (función, simbólico, etc.)
-@inline function Integrate(a::Integrand, b::Union{DomainMeasure, AbstractVector{DomainMeasure}})
+@inline function Integrate(a::Integrand, b::Union{DomainMeasure,AbstractVector{DomainMeasure}})
     measures = isa(b, DomainMeasure) ? [b] : b
     return (a.object, measures)
 end
 import Base: *
-(*)(a::Integrand, b::Union{DomainMeasure, AbstractVector{DomainMeasure}}) = Integrate(a, b)
+(*)(a::Integrand, b::Union{DomainMeasure,AbstractVector{DomainMeasure}}) = Integrate(a, b)
 (*)(a::Union{Float64,Int}, b::EFGFunction) = a * Get_Point_Values(b)
 (*)(a::EFGFunction, b::Union{Float64,Int}) = Get_Point_Values(a) * b
 (*)(a::Union{Float64,Int}, b::GradEFGFunction) = a * b.grads
@@ -127,10 +147,27 @@ import Base: *
 (*)(a::GradSingleEFGMeasure, b::Union{Float64,Int}) = a.dphi * b
 (*)(a::EFGFunction, b::EFGFunction) = Internal_Product(a, b)
 (*)(a::SingleEFGMeasure, b::SingleEFGMeasure) = Internal_Product(a, b)
+(*)(a::EFGFunction, b::SingleEFGMeasure) = Internal_Product(a, b)
+(*)(a::EFGFunction, b::GradSingleEFGMeasure) = Internal_Product(a, b)
+(*)(a::Function, b::SingleEFGMeasure) = Internal_Product(a,b)
+(*)(a::Function, b::GradSingleEFGMeasure) = Internal_Product(a,b)
 import Base: ⋅
+(⋅)(a::Function, b::SingleEFGMeasure) = Internal_Product(a,b)
+(⋅)(a::Function, b::GradSingleEFGMeasure) = Internal_Product(a,b)
+(⋅)(a::EFGFunction, b::GradSingleEFGMeasure) = Internal_Product(a, b)
+(⋅)(a::EFGFunction, b::SingleEFGMeasure) = Internal_Product(a, b)
 (⋅)(a::EFGFunction, b::EFGFunction) = Internal_Product(a, b)
 (⋅)(a::GradEFGFunction, b::GradEFGFunction) = Internal_Product(a, b)
 (⋅)(a::SingleEFGMeasure, b::SingleEFGMeasure) = Internal_Product(a, b)
 (⋅)(a::GradSingleEFGMeasure, b::GradSingleEFGMeasure) = Internal_Product(a, b)
-Internal_Product(a::Int,b::Int)=a*b
+Internal_Product(a::Int, b::Int) = a * b
 (⋅)(a::Int, b::Int) = Internal_Product(a, b)
+Internal_Product(a::Int, b::Vector{Float64}) = a * b
+
+# Nothing Operations
+(*)(::EFGFunction,::Nothing)=nothing
+(*)(::Function,::Nothing)=nothing
+(*)(::Int,::Nothing)=nothing
+(*)(::Float64,::Nothing)=nothing
+(*)(::Nothing,::Nothing)=nothing
+(⋅)(::Nothing,::Nothing)=nothing
