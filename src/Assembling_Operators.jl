@@ -91,10 +91,10 @@ function LOAD_VECTOR(dd, gs, PHI, DOM, nnod)
     return Qpf
 end
 function Bilinear_Assembler(f::Function, Space::EFGSpace)
-    GC.gc()
     _, dX = f(1, 1)
     Shapes = EFG_Measure(dX, Space)
     DOM, nnodes = Shapes.DOM, Shapes.nnodes
+    dX=merge(dX)
     gs = dX.gs
     numqc = length(DOM)
     dim = size(gs, 2) - 2
@@ -123,6 +123,5 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
     end
     O = sparse(row, col, val, nnodes, nnodes)
     row = col = val = DOM = Shapes = dX = nothing
-    GC.gc()
     return O
 end

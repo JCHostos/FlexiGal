@@ -111,11 +111,12 @@ const ∫ = Integrand
 end
 
 # Caso 2: a.object es cualquier otra cosa (función, simbólico, etc.)
-@inline function Integrate(a::Integrand, b::DomainMeasure)
-    return (a.object, b)   # integración diferida para Bilinear_Assembler
+@inline function Integrate(a::Integrand, b::Union{DomainMeasure, AbstractVector{DomainMeasure}})
+    measures = isa(b, DomainMeasure) ? [b] : b
+    return (a.object, measures)
 end
 import Base: *
-(*)(a::Integrand, b::DomainMeasure) = Integrate(a, b)
+(*)(a::Integrand, b::Union{DomainMeasure, AbstractVector{DomainMeasure}}) = Integrate(a, b)
 (*)(a::Union{Float64,Int}, b::EFGFunction) = a * Get_Point_Values(b)
 (*)(a::EFGFunction, b::Union{Float64,Int}) = Get_Point_Values(a) * b
 (*)(a::Union{Float64,Int}, b::GradEFGFunction) = a * b.grads

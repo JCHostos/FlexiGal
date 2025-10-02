@@ -20,45 +20,11 @@ function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
     conn= nothing
     return DomainMeasure(tag, gs)
 end
-function Merge_Measures(model::EFGmodel, measures::Vector{DomainMeasure}; tag::String)
-    # 1. Concatenar gauss points
-    gs_merged = vcat([m.gs for m in measures]...)
+function merge(measures::Vector{DomainMeasure}; tag::String="merged")
+    isempty(measures) && error("No DomainMeasure to merge")
 
-    # 2. Buscar conectividades originales de cada tag
-    conns = Matrix{Int}[]
-    for m in measures
-        conn = get_entity(model, m.tag)
-        if conn isa Int
-            push!(conns, [conn])  # en caso raro de que sea un solo nodo
-        else
-            push!(conns, conn)
-        end
-    end
-    conn_merged = vcat(conns...)
-
-    # 3. Crear nuevo DomainMeasure
-    new_measure = DomainMeasure(tag, gs_merged)
-
-    # 4. Insertar en el model.entities en la categoría correcta
-    new_entities = deepcopy(model.entities)
-
-    # buscar en qué subdiccionario estaba el primer tag
-    parent_key = nothing
-    for (etype, subdict) in model.entities
-        if haskey(subdict, measures[1].tag)
-            parent_key = etype
-            break
-        end
-    end
-    parent_key === nothing && error("No se encontró ninguna categoría para el tag $(measures[1].tag)")
-
-    new_entities[parent_key][tag] = conn_merged
-
-    # 5. Nuevo model actualizado
-    new_model = EFGmodel(model.x, model.conn, new_entities,
-                         model.dim, model.ncells, model.nnodes)
-     conn_merged=gs_merged=nothing
-    return new_measure, new_model
+    all_gs = vcat([m.gs for m in measures]...)
+    return DomainMeasure(tag, all_gs)
 end
 # Constructing Shape Functions given model, Measures for Integration and Influence domains
 struct EFGSpace

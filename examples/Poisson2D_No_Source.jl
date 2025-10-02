@@ -1,7 +1,7 @@
 using FlexiGal
 using GLMakie
 Domain = (1.0, 1.0)
-Divisions = (100,100)
+Divisions = (60,60)
 dmax = 1.5
 model = create_model(Domain, Divisions)
 dm = Influence_Domains(model, Domain, Divisions, dmax)
@@ -9,10 +9,10 @@ ngpts = 3
 dΩ = BackgroundIntegration(model, "Domain", ngpts)
 dΓ1 = BackgroundIntegration(model, "Left", ngpts)
 dΓ2 = BackgroundIntegration(model, "Bottom", ngpts)
-dΓd, model = Merge_Measures(model,[dΓ1,dΓ2], tag="Dirichlet")
-Tspace = EFGSpace(model, [dΩ, dΓd, dΓ2], dm)
+Tspace = EFGSpace(model, [dΩ, dΓ1, dΓ2], dm)
 a(δT, T) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
 K = Bilinear_Assembler(a,Tspace)
+dΓd=[dΓ1,dΓ2]
 a(δT, T) = ∫(δT * (1000 * T)) * dΓd
 Kp = Bilinear_Assembler(a,Tspace)
 Q = AssembleEFG(dΓ2, Tspace, "Load"; prop=5000.0) # Non Null Dirichlet BC T=5
