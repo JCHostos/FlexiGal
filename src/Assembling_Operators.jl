@@ -111,9 +111,9 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
         row[pos:pos+nvec^2-1] = repeat(dom, inner=nvec)
         col[pos:pos+nvec^2-1] = repeat(dom, outer=nvec)
         @inbounds for a in 1:nvec
-            aMeasure = SingleEFGMeasure(Shapes, ind, a, coords[ind,:])
+            @inline aMeasure = SingleEFGMeasure(Shapes, ind, a, coords[ind,:])
             @simd for b in 1:nvec
-                bMeasure = SingleEFGMeasure(Shapes, ind, b,coords[ind,:])
+              @inline bMeasure = SingleEFGMeasure(Shapes, ind, b,coords[ind,:])
                 Oloc[a, b], _ = f(aMeasure, bMeasure)
                 Oloc[a, b] = Oloc[a, b] * gs[ind, end] * gs[ind, end-1]
             end

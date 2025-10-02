@@ -18,6 +18,12 @@ function EFGFunction(field_nodal::Vector{Float64},
     end
     return EFGFunction(fdom, PHI, DPHI)
 end
+struct SingleEFGFunction
+    fdomg::Vector{Float64}
+    phig::Vector{Float64}
+    dphig::Matrix{Float64}
+end
+Single_EFGFunction(a::EFGFunction,ind::Int)=SingleEFGFunction(a.fdom[ind],a.PHI[ind],a.DPHI[ind])
 # Operations over EFGFunctions
 function Get_Point_Values(f::EFGFunction)
     ngauss = length(f.PHI)
@@ -123,18 +129,40 @@ const ∫ = Integrand
 # Domain Measure Operations
 # Integration Operations
 # Caso 1: a.object es un vector numérico
-@inline function Integrate(a::Integrand{<:AbstractVector}, b::DomainMeasure)
+function Integrate(a::Integrand{<:AbstractVector}, b::DomainMeasure)
     gs = b.gs
     jac = gs[:, end]
     weight = gs[:, end-1]
     return a.object .* (jac .* weight)   # integración “vieja”
 end
 
-# Caso 2: a.object es cualquier otra cosa (función, simbólico, etc.)
 @inline function Integrate(a::Integrand, b::Union{DomainMeasure,AbstractVector{DomainMeasure}})
     measures = isa(b, DomainMeasure) ? [b] : b
     return (a.object, measures)
 end
+struct Composition
+    f::Function   # función escalar del usuario, e.g., x -> x^3
+    Th::EFGFunction  # función finita
+end
+
+Composition(a::EFGFunction,b::Function) = b.(Get_Point_Values(a))
+
+# Sobrecarga del operador * con SingleEFGMeasure
+@inline function Internal_Product(k::Composition, b::SingleEFGMeasure)
+    val = Get_Point_Value(k.Th, b.ind)  # obtiene T en ese punto de Gauss
+    return SingleEFGMeasure(k.f(val) * b.phi, b.dphi, b.ind, b.coord)
+end
+
+# Sobrecarga del operador * con GradSingleEFGMeasure
+@inline function Internal_Product(k::Composition, b::GradSingleEFGMeasure)
+    val = Get_Point_Value(k.Th, b.ind)
+    return GradSingleEFGMeasure(k.f(val) * b.dphi, b.ind, b.coord)
+end
+
+import Base: ∘
+(∘)(a::Function, b::EFGFunction) = Composition(a,b)
+(∘)(a::EFGFunction,b::Function) = Composition(a,b)
+
 import Base: *
 (*)(a::Integrand, b::Union{DomainMeasure,AbstractVector{DomainMeasure}}) = Integrate(a, b)
 (*)(a::Union{Float64,Int}, b::EFGFunction) = a * Get_Point_Values(b)
@@ -151,6 +179,8 @@ import Base: *
 (*)(a::EFGFunction, b::GradSingleEFGMeasure) = Internal_Product(a, b)
 (*)(a::Function, b::SingleEFGMeasure) = Internal_Product(a,b)
 (*)(a::Function, b::GradSingleEFGMeasure) = Internal_Product(a,b)
+(*)(a::Composition, b::SingleEFGMeasure) = Internal_Product(a,b)
+(*)(a::Composition, b::GradSingleEFGMeasure) = Internal_Product(a,b)
 import Base: ⋅
 (⋅)(a::Function, b::SingleEFGMeasure) = Internal_Product(a,b)
 (⋅)(a::Function, b::GradSingleEFGMeasure) = Internal_Product(a,b)
@@ -160,6 +190,8 @@ import Base: ⋅
 (⋅)(a::GradEFGFunction, b::GradEFGFunction) = Internal_Product(a, b)
 (⋅)(a::SingleEFGMeasure, b::SingleEFGMeasure) = Internal_Product(a, b)
 (⋅)(a::GradSingleEFGMeasure, b::GradSingleEFGMeasure) = Internal_Product(a, b)
+(⋅)(a::Composition, b::SingleEFGMeasure) = Internal_Product(a,b)
+(⋅)(a::Composition, b::GradSingleEFGMeasure) = Internal_Product(a,b)
 Internal_Product(a::Int, b::Int) = a * b
 (⋅)(a::Int, b::Int) = Internal_Product(a, b)
 Internal_Product(a::Int, b::Vector{Float64}) = a * b
@@ -167,6 +199,7 @@ Internal_Product(a::Int, b::Vector{Float64}) = a * b
 # Nothing Operations
 (*)(::EFGFunction,::Nothing)=nothing
 (*)(::Function,::Nothing)=nothing
+(*)(::Composition,::Nothing)=nothing
 (*)(::Int,::Nothing)=nothing
 (*)(::Float64,::Nothing)=nothing
 (*)(::Nothing,::Nothing)=nothing
