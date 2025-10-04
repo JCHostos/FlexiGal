@@ -3,7 +3,7 @@ include("Geometry.jl")
 include("Shape_Functions.jl")
 include("Integration.jl")
 export create_model, BackgroundIntegration, EFGSpace, Influence_Domains, AssembleEFG, EFGFunction,
-    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, *, EFG_Measure, Bilinear_Assembler, Merge_Measures
+    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, *, Bilinear_Assembler
 struct DomainMeasure
     tag::String
     gs::Matrix{Float64}
