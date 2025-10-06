@@ -116,15 +116,17 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
             @simd for b in 1:nvec
                 Oloc[a, b], _ = f(measures[a], measures[b])
                 Oloc[a, b] = Oloc[a, b] * weightjac
+                #val[pos + (b-1)*nvec + (a-1)] = f(measures[a], measures[b])[1] * weightjac
             end
         end
-        val[pos:pos+nvec^2-1] = vec(Oloc)
+        val[pos:pos+nvec^2-1] = Oloc[:];
         pos += nvec^2
     end
     O = sparse(row, col, val, nnodes, nnodes)
     row = col = val = DOM = Shapes = dX = nothing
     return O
 end
+
 function Linear_Assembler(f::Function, Space::EFGSpace)
     _, dX = f(nothing)
     Shapes = EFG_Measure(dX, Space)

@@ -2,7 +2,7 @@ using FlexiGal
 using GLMakie
 Domain = (1.0, 1.0, 0.1)
 Divisions = (40, 40, 4)
-dmax = 1.5
+dmax = [1.35,1.35,1.05]
 model = create_model(Domain, Divisions)
 dm = Influence_Domains(model, Domain, Divisions, dmax)
 ngpts = 3

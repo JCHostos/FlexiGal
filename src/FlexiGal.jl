@@ -63,23 +63,30 @@ function EFG_Space(model::EFGmodel, gs_list::Union{DomainMeasure, Vector{DomainM
     return EFGSpace(results_domain, results_boundary,Dirichlet_Measures,Dirichlet_Values, nnodes)
 end
 # Defining Influence Domains (Ongoing Development)
-function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dmax::Float64)
+function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dmax::Union{Real, AbstractVector{<:Real}})
     dim = size(model.x, 2)
     dm = zeros(size(model.x, 1), dim)
+    # Convertir dmax a vector de longitud dim
+    dvec = isa(dmax, Real) ? fill(dmax, dim) : dmax
+    @assert length(dvec) == dim "Length of dmax vector must match problem dimension"
+    # Extraer dimensiones y divisiones
     if dim == 2
         Lx, Ly = Domain
         Nx, Ny = Divisions
-        dm[:, 1] .= dmax * Lx / Nx
-        dm[:, 2] .= dmax * Ly / Ny
+        dm[:, 1] .= dvec[1] * Lx / Nx
+        dm[:, 2] .= dvec[2] * Ly / Ny
     elseif dim == 3
         Lx, Ly, Lz = Domain
         Nx, Ny, Nz = Divisions
-        dm[:, 1] .= dmax * Lx / Nx
-        dm[:, 2] .= dmax * Ly / Ny
-        dm[:, 3] .= dmax * Lz / Nz
+        dm[:, 1] .= dvec[1] * Lx / Nx
+        dm[:, 2] .= dvec[2] * Ly / Ny
+        dm[:, 3] .= dvec[3] * Lz / Nz
+    else
+        error("Only 2D and 3D supported")
     end
     return dm
 end
+
 # Beta Version for Assembling EFG Matrices and Vectors
 function AssembleEFG(
     Measures::Union{DomainMeasure, AbstractVector{<:DomainMeasure}},
