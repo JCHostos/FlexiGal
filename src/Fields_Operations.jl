@@ -46,9 +46,16 @@ function Get_Point_Values(f::VecEFGFunction)
     end
     return gradfs
 end
+@inline function Get_Point_Value(a::EFGFunction, ind::Int)
+    return dot(a.PHI[ind], a.fdom[ind])
+end
+@inline function Get_Point_Value(a::VecEFGFunction, ind::Int)
+    return a.VEC[ind]'*a.fdom[ind]
+end
+
+@inline ∇(::Nothing) = nothing
 
 # Operations over EFGMeasures
-@inline ∇(::Nothing) = nothing
 struct SingleEFGMeasure
     phi::Float64
     dphi::Vector{Float64}
@@ -68,6 +75,8 @@ end
 @inline function ∇(SingleEFG::SingleEFGMeasure)
     return VecSingleEFGMeasure(SingleEFG.dphi,SingleEFG.ind,SingleEFG.coord)
 end
+
+# Productos Globales
 function Internal_Product(a::EFGFunction, b::EFGFunction)
     as = Get_Point_Values(a)
     bs = Get_Point_Values(b)
@@ -78,12 +87,20 @@ function Internal_Product(a::EFGFunction, b::EFGFunction)
     end
     return product
 end
-@inline function Get_Point_Value(a::EFGFunction, ind::Int)
-    return dot(a.PHI[ind], a.fdom[ind])
+
+function Internal_Product(a::VecEFGFunction, b::VecEFGFunction)
+    as = Get_Point_Values(a)
+    bs = Get_Point_Values(b)
+    ns = length(as)
+    product = Vector{Float64}(undef, ns)
+    @inbounds for i in 1:ns
+        product[i] = dot(as[i], bs[i])
+    end
+    return product
 end
-@inline function Get_Point_Value(a::VecEFGFunction, ind::Int)
-    return a.VEC[ind]'*a.fdom[ind]
-end
+# Productos locales para ensamblaje de Matrices y Vectores
+
+# EFGFunctions-SingleMeasures
 @inline function Internal_Product(a::EFGFunction, b::SingleEFGMeasure)
     phi, dphi, ind, coord = b.phi, b.dphi, b.ind, b.coord
     as = Get_Point_Value(a, ind)
@@ -104,12 +121,15 @@ end
     as = Get_Point_Value(a, ind)
     return SingleEFGMeasure(dot(as,b.vec),vec, ind, coord)
 end
+
+# Functions-SingleMeasures
 @inline function Internal_Product(a::Function, b::SingleEFGMeasure)
     phi, dphi, ind, coord = b.phi, b.dphi, b.ind, b.coord
     as = a(coord)
     return SingleEFGMeasure(as * phi, dphi, ind, coord)
 end
-@inline function Internal_Product(a::Function, b::VecSingleEFGMeasure)
+
+ @inline function Internal_Product(a::Function, b::VecSingleEFGMeasure)
     as = a(b.coord)  # puede ser escalar o VectorField
     if isa(as, Number)
         # a(coord) devuelve escalar
@@ -122,61 +142,24 @@ end
         error("Internal_Product: valor de retorno inesperado")
     end
 end
-function Internal_Product(a::VecEFGFunction, b::VecEFGFunction)
-    as = Get_Point_Values(a)
-    bs = Get_Point_Values(b)
-    ns = length(as)
-    product = Vector{Float64}(undef, ns)
-    @inbounds for i in 1:ns
-        product[i] = dot(as[i], bs[i])
-    end
-    return product
-end
 
+
+# Composiciones de EFGFunctions con Funciones
 struct Composition{T<:Union{EFGFunction, VecEFGFunction}}
     f::Function
     Th::T
 end
 
-# --------------------------------------------------
-# Constructores con sobrecarga de ∘ (\circ)
-# --------------------------------------------------
+#Sobrecarga \circ para composiciones
 import Base: ∘
-
 # Function ∘ EFGFunction → Composition
 (∘)(a::Function, b::EFGFunction) = Composition{EFGFunction}(a, b)
 (∘)(a::EFGFunction, b::Function) = Composition{EFGFunction}(b, a)
-
 # Function ∘ VecEFGFunction → Composition
 (∘)(a::Function, b::VecEFGFunction) = Composition{VecEFGFunction}(a, b)
 (∘)(a::VecEFGFunction, b::Function) = Composition{VecEFGFunction}(b, a)
 
-# --------------------------------------------------
-# Evaluación en todos los puntos
-# --------------------------------------------------
-function Get_Point_Values(c::Composition{EFGFunction})
-    vals = Get_Point_Values(c.Th)
-    return c.f.(vals)  # aplica f escalar a cada valor
-end
-
-function Get_Point_Values(c::Composition{VecEFGFunction})
-    vals = Get_Point_Values(c.Th)
-    return [c.f(v) for v in vals]  # aplica f a cada vector
-end
-
-# --------------------------------------------------
-# Evaluación en un punto específico
-# --------------------------------------------------
-function Get_Point_Value(c::Composition{EFGFunction}, ind::Int)
-    val = Get_Point_Value(c.Th, ind)
-    return c.f(val)
-end
-
-function Get_Point_Value(c::Composition{VecEFGFunction}, ind::Int)
-    val = Get_Point_Value(c.Th, ind)
-    return c.f(val)
-end
-
+# Composiciones y Single Measures
 @inline function Internal_Product(k::Composition{EFGFunction}, b::SingleEFGMeasure)
     val = Get_Point_Value(k, b.ind)  # obtiene T en ese punto de Gauss
     return SingleEFGMeasure(val*b.phi, b.dphi, b.ind, b.coord)
@@ -196,25 +179,47 @@ end
     val = Get_Point_Value(k, b.ind)
     return VecSingleEFGMeasure(val*b.vec, b.ind, b.coord)
 end
+# --------------------------------------------------
+# Evaluación de Composiciones en todos los puntos
+# --------------------------------------------------
+function Get_Point_Values(c::Composition{EFGFunction})
+    vals = Get_Point_Values(c.Th)
+    return c.f.(vals)  # aplica f escalar a cada valor
+end
 
+function Get_Point_Values(c::Composition{VecEFGFunction})
+    vals = Get_Point_Values(c.Th)
+    return [c.f(v) for v in vals]  # aplica f a cada vector
+end
+
+# --------------------------------------------------
+# Evaluación en un punto específico para Composiciones
+# --------------------------------------------------
+function Get_Point_Value(c::Composition{EFGFunction}, ind::Int)
+    val = Get_Point_Value(c.Th, ind)
+    return c.f(val)
+end
+function Get_Point_Value(c::Composition{VecEFGFunction}, ind::Int)
+    val = Get_Point_Value(c.Th, ind)
+    return c.f(val)
+end
+
+#Constructor de VectorField
 struct VectorField{D,T}
     data::NTuple{D,T}
 end
 
-# Constructor rápido
 VectorField(x::Vararg{T,D}) where {T,D} = VectorField{D,T}(x)
-
-# Acceso tipo array
 Base.getindex(v::VectorField{D,T}, i::Int) where {D,T} = v.data[i]
 Base.length(::VectorField{D,T}) where {D,T} = D
 
+# Constructor para Integral
 struct Integrand{T}
     object::T
 end
 const ∫ = Integrand
-# Domain Measure Operations
-# Integration Operations
-# Caso 1: a.object es un vector numérico
+
+#Integrando un campo dado
 function Integrate(a::Integrand{<:AbstractVector}, b::DomainMeasure)
     gs = b.gs
     jac = gs[:, end]
@@ -222,6 +227,7 @@ function Integrate(a::Integrand{<:AbstractVector}, b::DomainMeasure)
     return a.object .* (jac .* weight)   # integración “vieja”
 end
 
+#Evaluación local de integración para ensamblaje de matrices y vectores
 @inline function Integrate(a::Integrand, b::Union{DomainMeasure,AbstractVector{DomainMeasure}})
     measures = isa(b, DomainMeasure) ? [b] : b
     return (a.object, measures)
