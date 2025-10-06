@@ -94,7 +94,7 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
     _, dX = f(nothing, nothing)
     Shapes = EFG_Measure(dX, Space)
     DOM, nnodes = Shapes.DOM, Shapes.nnodes
-    dX=merge(dX)
+    dX = merge(dX)
     gs = dX.gs
     numqc = length(DOM)
     dim = size(gs, 2) - 2
@@ -110,12 +110,12 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
         Oloc = Array{Float64}(undef, nvec, nvec)
         row[pos:pos+nvec^2-1] = repeat(dom, inner=nvec)
         col[pos:pos+nvec^2-1] = repeat(dom, outer=nvec)
+        measures = [SingleEFGMeasure(Shapes, ind, a, coords[ind, :]) for a in 1:nvec]
+        weightjac = gs[ind, end] * gs[ind, end-1]
         @inbounds for a in 1:nvec
-                aMeasure = SingleEFGMeasure(Shapes, ind, a, coords[ind,:])
             @simd for b in 1:nvec
-                bMeasure = SingleEFGMeasure(Shapes, ind, b,coords[ind,:])
-                Oloc[a, b], _ = f(aMeasure, bMeasure)
-                Oloc[a, b] = Oloc[a, b] * gs[ind, end] * gs[ind, end-1]
+                Oloc[a, b], _ = f(measures[a], measures[b])
+                Oloc[a, b] = Oloc[a, b] * weightjac
             end
         end
         val[pos:pos+nvec^2-1] = vec(Oloc)
@@ -129,7 +129,7 @@ function Linear_Assembler(f::Function, Space::EFGSpace)
     _, dX = f(nothing)
     Shapes = EFG_Measure(dX, Space)
     DOM, nnodes = Shapes.DOM, Shapes.nnodes
-    dX=merge(dX)
+    dX = merge(dX)
     gs = dX.gs
     numqc = length(DOM)
     dim = size(gs, 2) - 2
@@ -144,16 +144,75 @@ function Linear_Assembler(f::Function, Space::EFGSpace)
         row[pos:pos+nvec-1] = DOM[ind]
         Qloc = Vector{Float64}(undef, nvec)
         @inbounds for a in 1:nvec
-                aMeasure = SingleEFGMeasure(Shapes, ind, a, coords[ind,:])
-                aux=unit_measure(aMeasure)
-                Value,_=f(aMeasure)
-                Qloc[a] = aux*Value
-                Qloc[a] = Qloc[a] * gs[ind, end] * gs[ind, end-1]
+            aMeasure = SingleEFGMeasure(Shapes, ind, a, coords[ind, :])
+            aux = unit_measure(aMeasure)
+            Value, _ = f(aMeasure)
+            Qloc[a] = aux * Value
+            Qloc[a] = Qloc[a] * gs[ind, end] * gs[ind, end-1]
         end
-        val[pos:pos+nvec-1]=Qloc
+        val[pos:pos+nvec-1] = Qloc
         pos += nvec
     end
     Qpf = vec(Array(sparse(row, ones(Int, length(row)), val, nnodes, 1)))
     row = val = DOM = Shapes = dX = nothing
     return Qpf
+end
+
+function Linear_Problem(Bi_op::Function, Li_op::Function, Space::EFGSpace)
+    # Ensamblaje volumétrico obligatorio
+    A = Bilinear_Assembler(Bi_op, Space)
+    F = Linear_Assembler(Li_op, Space)
+
+    n = Space.nnodes
+    α = 1e5
+
+    if isempty(Space.Dirichlet_Measures)
+        # No hay Dirichlet: Ap y Fp nulos
+        Af = A
+        Ff = F
+    else
+        # Hay Dirichlet: ensamblar penalización y contribuciones de carga
+        dΓd = Space.Dirichlet_Measures
+        dirichlet_values = isempty(Space.Dirichlet_Values) ?
+        fill(0.0, length(dΓd)) : Space.Dirichlet_Values
+        Ap = Bilinear_Assembler((δu, u) -> ∫(δu * (α * u))dΓd, Space)
+
+        Fp = zeros(n)
+        for (diri, dΓc) in zip(dirichlet_values, dΓd)
+            if diri != 0.0
+                Fp += Linear_Assembler(δu -> ∫((α * diri) * δu)dΓc, Space)
+            end
+        end
+        Af = A + Ap
+        Ff = F + Fp
+    end
+    return (Af, Ff)
+end
+
+
+function Linear_Problem(Bi_op::Function, Space::EFGSpace)
+    # Ensamblaje volumétrico obligatorio
+    A = Bilinear_Assembler(Bi_op, Space)
+
+    n = Space.nnodes
+    α = 1e5
+
+    if isempty(Space.Dirichlet_Measures)
+        # No hay Dirichlet: devolvemos A y vector vacío
+        return (A, zeros(n))
+    else
+        dΓd = Space.Dirichlet_Measures
+        dirichlet_values = isempty(Space.Dirichlet_Values) ?
+        fill(0.0, length(dΓd)) : Space.Dirichlet_Values
+        Ap = Bilinear_Assembler((δu, u) -> ∫(δu * (α * u))dΓd, Space)
+        Ff = zeros(n)
+        for (diri, dΓc) in zip(dirichlet_values, dΓd)
+            if diri != 0.0
+                Ff += Linear_Assembler(δu -> ∫((α * diri) * δu)dΓc, Space)
+            end
+        end
+
+      Af = A + Ap
+        return (Af, Ff)
+    end
 end

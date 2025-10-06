@@ -2,8 +2,8 @@ module FlexiGal
 include("Geometry.jl")
 include("Shape_Functions.jl")
 include("Integration.jl")
-export create_model, BackgroundIntegration, EFGSpace, Influence_Domains, AssembleEFG, EFGFunction,
-    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, Bilinear_Assembler, Linear_Assembler, VectorField
+export create_model, BackgroundIntegration, EFG_Space, Influence_Domains, AssembleEFG, EFGFunction,
+    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, Bilinear_Assembler, Linear_Assembler, VectorField, Linear_Problem
 struct DomainMeasure
     tag::String
     gs::Matrix{Float64}
@@ -30,10 +30,12 @@ end
 struct EFGSpace
     domain::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
     boundary::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
+    Dirichlet_Measures::Vector{DomainMeasure}
+    Dirichlet_Values::Vector{Union{Int,Float64}}
     nnodes::Int
 end
 
-function EFGSpace(model::EFGmodel, gs_list::Union{DomainMeasure, Vector{DomainMeasure}}, dm::Matrix{Float64})
+function EFG_Space(model::EFGmodel, gs_list::Union{DomainMeasure, Vector{DomainMeasure}},dm::Matrix{Float64},Dirichlet_Measures::Vector{DomainMeasure}=Vector{DomainMeasure}(),Dirichlet_Values::Vector{Float64}=Float64[])
     # Forzar que gs_list siempre sea un vector
     gs_list = isa(gs_list, DomainMeasure) ? [gs_list] : gs_list
 
@@ -58,7 +60,7 @@ function EFGSpace(model::EFGmodel, gs_list::Union{DomainMeasure, Vector{DomainMe
     end
     gs_list=nothing
 
-    return EFGSpace(results_domain, results_boundary, nnodes)
+    return EFGSpace(results_domain, results_boundary,Dirichlet_Measures,Dirichlet_Values, nnodes)
 end
 # Defining Influence Domains (Ongoing Development)
 function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dmax::Float64)
