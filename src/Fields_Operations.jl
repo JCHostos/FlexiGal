@@ -67,6 +67,9 @@ end
     dphi = EFGm.DPHI[ind][a, :]
     return SingleEFGMeasure(phi, dphi, ind, coord)
 end
+@inline function unit_measure(a::SingleEFGMeasure)
+    return SingleEFGMeasure(1.0, a.dphi, a.ind, a.coord)
+end
 struct VecSingleEFGMeasure
     vec::Vector{Float64}
     ind::Int

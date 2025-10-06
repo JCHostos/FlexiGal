@@ -1,8 +1,8 @@
 using FlexiGal
 using GLMakie
 Domain = (1.0, 1.0, 1.0)
-Divisions = (20, 20, 20)
-dmax = 1.35
+Divisions = (25, 25, 25)
+dmax = 1.5
 model = create_model(Domain, Divisions)
 dm = Influence_Domains(model, Domain, Divisions, dmax)
 ngpts = 3
@@ -13,7 +13,8 @@ a(δT, T) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
 K = Bilinear_Assembler(a,Tspace)
 a(δT, T) = ∫(δT * (1000 * T)) * dΓ
 Kp = Bilinear_Assembler(a,Tspace)
-Q = AssembleEFG(dΩ, Tspace, "Load"; prop=5000) # Uniform Source
+b(δT) = ∫(5000*δT)dΩ
+Q =Linear_Assembler(b,Tspace)
 T = (K + Kp) \ Q;
 Th = EFGFunction(T, Tspace, dΩ)
 Tgauss = Get_Point_Values(Th)

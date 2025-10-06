@@ -111,9 +111,9 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
         row[pos:pos+nvec^2-1] = repeat(dom, inner=nvec)
         col[pos:pos+nvec^2-1] = repeat(dom, outer=nvec)
         @inbounds for a in 1:nvec
-            @inline aMeasure = SingleEFGMeasure(Shapes, ind, a, coords[ind,:])
+                aMeasure = SingleEFGMeasure(Shapes, ind, a, coords[ind,:])
             @simd for b in 1:nvec
-              @inline bMeasure = SingleEFGMeasure(Shapes, ind, b,coords[ind,:])
+                bMeasure = SingleEFGMeasure(Shapes, ind, b,coords[ind,:])
                 Oloc[a, b], _ = f(aMeasure, bMeasure)
                 Oloc[a, b] = Oloc[a, b] * gs[ind, end] * gs[ind, end-1]
             end
@@ -124,4 +124,36 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
     O = sparse(row, col, val, nnodes, nnodes)
     row = col = val = DOM = Shapes = dX = nothing
     return O
+end
+function Linear_Assembler(f::Function, Space::EFGSpace)
+    _, dX = f(nothing)
+    Shapes = EFG_Measure(dX, Space)
+    DOM, nnodes = Shapes.DOM, Shapes.nnodes
+    dX=merge(dX)
+    gs = dX.gs
+    numqc = length(DOM)
+    dim = size(gs, 2) - 2
+    coords = gs[:, 1:dim]
+    total_length = sum(length.(DOM))
+    row = Vector{Int}(undef, total_length)
+    val = Vector{Float64}(undef, total_length)
+    pos = 1
+    @inbounds for ind in 1:numqc
+        dom = DOM[ind]
+        nvec = length(dom)
+        row[pos:pos+nvec-1] = DOM[ind]
+        Qloc = Vector{Float64}(undef, nvec)
+        @inbounds for a in 1:nvec
+                aMeasure = SingleEFGMeasure(Shapes, ind, a, coords[ind,:])
+                aux=unit_measure(aMeasure)
+                Value,_=f(aMeasure)
+                Qloc[a] = aux*Value
+                Qloc[a] = Qloc[a] * gs[ind, end] * gs[ind, end-1]
+        end
+        val[pos:pos+nvec-1]=Qloc
+        pos += nvec
+    end
+    Qpf = vec(Array(sparse(row, ones(Int, length(row)), val, nnodes, 1)))
+    row = val = DOM = Shapes = dX = nothing
+    return Qpf
 end

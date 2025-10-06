@@ -15,7 +15,8 @@ a(δT, T) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
 K = Bilinear_Assembler(a,Tspace)
 a(δT, T) = ∫(δT * (1000.0 * T)) * dΓd
 Kp = Bilinear_Assembler(a,Tspace)
-Q = AssembleEFG(dΓ2, Tspace, "Load"; prop=5000.0) # Non Null Dirichlet BC T=5
+b(δT)=∫(5000.0*δT)dΓ2
+Q = Linear_Assembler(b,Tspace)
 T = (K + Kp) \ Q;
 Th = EFGFunction(T, Tspace, dΩ)
 Tgauss = Get_Point_Values(Th)
