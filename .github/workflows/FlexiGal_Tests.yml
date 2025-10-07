@@ -20,5 +20,14 @@ jobs:
       - name: Instantiate project
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Run 2D Poisson example
+      - name: Run 2D Advection-Diffusion example
         run: julia --project=. examples/Poisson2D_No_Source.jl
+
+      - name: Run 2D Poisson Source example
+        run: julia --project=. examples/Poisson2D_Source.jl
+
+      - name: Run 3D Poisson No Source example
+        run: julia --project=. examples/Poisson3D_No_Source.jl
+
+      - name: Run 3D Poisson Source example
+        run: julia --project=. examples/Poisson3D_Source.jl
