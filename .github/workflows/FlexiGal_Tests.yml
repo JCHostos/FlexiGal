@@ -17,8 +17,17 @@ jobs:
         with:
           version: '1.11.6'
 
+      # Cache Julia packages
+      - name: Cache Julia packages
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.julia/packages
+            ~/.julia/artifacts
+          key: ${{ runner.os }}-julia-${{ hashFiles('Project.toml', 'Manifest.toml') }}
+
       - name: Instantiate project
-        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+        run: julia -e 'using Pkg; Pkg.instantiate()'
 
       - name: Run 2D Poisson example
-        run: julia --project=. examples/Poisson2D_No_Source.jl
+        run: julia examples/Poisson2D_No_Source.jl
