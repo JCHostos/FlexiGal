@@ -32,12 +32,12 @@ struct EFGSpace
     boundary::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
     Field_Type::Type
     Dirichlet_Measures::Vector{DomainMeasure}
-    Dirichlet_Values::Vector{Union{Int,Float64}}
+    Dirichlet_Values::Union{Vector{Float64},Vector{Any}}
     nnodes::Int
 end
 
 function EFG_Space(model::EFGmodel, gs_list::Union{DomainMeasure, Vector{DomainMeasure}},Field_Type::Type,dm::Matrix{Float64};
-    Dirichlet_Measures::Vector{DomainMeasure}=Vector{DomainMeasure}(),Dirichlet_Values::Vector{Float64}=Float64[])
+    Dirichlet_Measures::Vector{DomainMeasure}=Vector{DomainMeasure}(),Dirichlet_Values::Union{Vector{Float64},Vector{Any}}=Float64[])
     # Forzar que gs_list siempre sea un vector
     gs_list = isa(gs_list, DomainMeasure) ? [gs_list] : gs_list
     x = model.x

@@ -119,7 +119,7 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
                 #val[pos + (b-1)*nvec + (a-1)] = f(measures[a], measures[b])[1] * weightjac
             end
         end
-        val[pos:pos+nvec^2-1] = Oloc[:];
+        val[pos:pos+nvec^2-1] = Oloc[:]
         pos += nvec^2
     end
     O = sparse(row, col, val, nnodes, nnodes)
@@ -176,13 +176,17 @@ function Linear_Problem(Bi_op::Function, Li_op::Function, Space::EFGSpace)
         # Hay Dirichlet: ensamblar penalización y contribuciones de carga
         dΓd = Space.Dirichlet_Measures
         dirichlet_values = isempty(Space.Dirichlet_Values) ?
-        fill(0.0, length(dΓd)) : Space.Dirichlet_Values
+                           fill(0.0, length(dΓd)) : Space.Dirichlet_Values
         Ap = Bilinear_Assembler((δu, u) -> ∫(δu * (α * u))dΓd, Space)
 
         Fp = zeros(n)
         for (diri, dΓc) in zip(dirichlet_values, dΓd)
-            if diri != 0.0
-                Fp += Linear_Assembler(δu -> ∫((α * diri) * δu)dΓc, Space)
+            if diri isa Function
+                # Dirichlet no homogénea dependiente de las coordenadas
+                Fp += Linear_Assembler(δu -> ∫(α * (diri * δu))dΓc, Space)
+            elseif diri != 0.0
+                # Dirichlet constante no nula
+                Fp += Linear_Assembler(δu -> ∫(α * (diri * δu))dΓc, Space)
             end
         end
         Af = A + Ap
@@ -205,16 +209,19 @@ function Linear_Problem(Bi_op::Function, Space::EFGSpace)
     else
         dΓd = Space.Dirichlet_Measures
         dirichlet_values = isempty(Space.Dirichlet_Values) ?
-        fill(0.0, length(dΓd)) : Space.Dirichlet_Values
+                           fill(0.0, length(dΓd)) : Space.Dirichlet_Values
         Ap = Bilinear_Assembler((δu, u) -> ∫(δu * (α * u))dΓd, Space)
         Ff = zeros(n)
         for (diri, dΓc) in zip(dirichlet_values, dΓd)
-            if diri != 0.0
-                Ff += Linear_Assembler(δu -> ∫((α * diri) * δu)dΓc, Space)
+            if diri isa Function
+                # Dirichlet no homogénea dependiente de las coordenadas
+                Ff += Linear_Assembler(δu -> ∫(α * (diri * δu))dΓc, Space)
+            elseif diri != 0.0
+                # Dirichlet constante no nula
+                Ff += Linear_Assembler(δu -> ∫(α * (diri * δu))dΓc, Space)
             end
         end
-
-      Af = A + Ap
+        Af = A + Ap
         return (Af, Ff)
     end
 end

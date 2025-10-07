@@ -206,7 +206,7 @@ function SHAPE_FUN(gs, x, dm)
     numqc = size(gs, 1)
     dim = size(x, 2)  # 2 o 3
     PHI = [Float64[] for _ in 1:numqc]
-    DPHI = [zeros(Float64, 0, 0) for _ in 1:numqc]  # lo podemos ajustar luego para dim × nvec
+    DPHI = [zeros(Float64, 0, 0) for _ in 1:numqc]
     DOM = [Int[] for _ in 1:numqc]
 
     @inbounds for (ind, gg) in enumerate(eachrow(gs))
