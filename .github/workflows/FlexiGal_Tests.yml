@@ -1,0 +1,24 @@
+name: FlexiGal_Tests
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.11.6'
+
+      - name: Instantiate project
+        run: julia -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Run 2D Poisson example
+        run: julia examples/Poisson2D_No_Source.jl
