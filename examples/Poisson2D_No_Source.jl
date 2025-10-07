@@ -23,7 +23,9 @@ Th = EFGFunction(T, Tspace, dΩ)
 Tgauss = Get_Point_Values(Th)
 ∇Th = ∇(Th)
 gs = dΩ.gs
+if !haskey(ENV, "GITHUB_ACTIONS")
 fig = Figure()
 ax = Axis(fig[1,1], aspect=Domain[2]/Domain[1])
 scatter!(ax, gs[:,1], gs[:,2]; color=Tgauss, markersize=4, colormap=:jet)
 fig
+end
