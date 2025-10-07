@@ -10,9 +10,8 @@ dΓ1 = BackgroundIntegration(model, "Left", ngpts)
 dΓ2 = BackgroundIntegration(model, "Bottom", ngpts)
 dΓ3 = BackgroundIntegration(model, "Right", ngpts)
 dΓ4 = BackgroundIntegration(model, "Top", ngpts)
-Dirichlet_Measures = [dΓ1, dΓ2, dΓ3, dΓ4]
-Dirichlet_Values = [0.0, 0.0, 5.0, 5.0]
-@time Tspace = EFG_Space(model, [dΩ, dΓ1, dΓ2, dΓ3, dΓ4], dm, Dirichlet_Measures, Dirichlet_Values)
+@time Tspace = EFG_Space(model, [dΩ, dΓ1, dΓ2, dΓ3, dΓ4],Float64, dm; 
+Dirichlet_Measures=[dΓ1, dΓ2, dΓ3, dΓ4], Dirichlet_Values=[0.0, 0.0, 5.0, 5.0])
 k = 1.0
 w(x) = VectorField(150 * (x[2] - 0.5), -150 * (x[1] - 0.5))
 a(δT, T) = ∫(∇(δT) ⋅ (k * ∇(T)) - δT * (w ⋅ ∇(T)))dΩ

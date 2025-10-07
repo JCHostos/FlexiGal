@@ -9,9 +9,7 @@ dΩ = BackgroundIntegration(model, "Domain", ngpts)
 dΓ1 = BackgroundIntegration(model, "Left", ngpts)
 dΓ2 = BackgroundIntegration(model, "Back", ngpts)
 dΓd = [dΓ1, dΓ2]
-Dirichlet_Measures = [dΓ1, dΓ2]
-Dirichlet_Values = [0.0, 5.0]
-@time Tspace = EFG_Space(model, [dΩ, dΓ1, dΓ2], dm, Dirichlet_Measures, Dirichlet_Values)
+@time Tspace = EFG_Space(model, [dΩ, dΓ1, dΓ2],Float64, dm; Dirichlet_Measures=[dΓ1,dΓ2], Dirichlet_Values=[0.0, 5.0])
 a(δT, T) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
 @time A, F = Linear_Problem(a, Tspace)
 @time T = A \ F

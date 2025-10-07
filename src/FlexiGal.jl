@@ -30,15 +30,16 @@ end
 struct EFGSpace
     domain::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
     boundary::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
+    Field_Type::Type
     Dirichlet_Measures::Vector{DomainMeasure}
     Dirichlet_Values::Vector{Union{Int,Float64}}
     nnodes::Int
 end
 
-function EFG_Space(model::EFGmodel, gs_list::Union{DomainMeasure, Vector{DomainMeasure}},dm::Matrix{Float64},Dirichlet_Measures::Vector{DomainMeasure}=Vector{DomainMeasure}(),Dirichlet_Values::Vector{Float64}=Float64[])
+function EFG_Space(model::EFGmodel, gs_list::Union{DomainMeasure, Vector{DomainMeasure}},Field_Type::Type,dm::Matrix{Float64};
+    Dirichlet_Measures::Vector{DomainMeasure}=Vector{DomainMeasure}(),Dirichlet_Values::Vector{Float64}=Float64[])
     # Forzar que gs_list siempre sea un vector
     gs_list = isa(gs_list, DomainMeasure) ? [gs_list] : gs_list
-
     x = model.x
     results_domain = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
     results_boundary = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
@@ -60,7 +61,7 @@ function EFG_Space(model::EFGmodel, gs_list::Union{DomainMeasure, Vector{DomainM
     end
     gs_list=nothing
 
-    return EFGSpace(results_domain, results_boundary,Dirichlet_Measures,Dirichlet_Values, nnodes)
+    return EFGSpace(results_domain, results_boundary,Field_Type,Dirichlet_Measures,Dirichlet_Values, nnodes)
 end
 # Defining Influence Domains (Ongoing Development)
 function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dmax::Union{Real, AbstractVector{<:Real}})
