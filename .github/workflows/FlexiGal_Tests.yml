@@ -11,23 +11,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+        
       - name: Set up Julia
         uses: julia-actions/setup-julia@v2
         with:
           version: '1.11.6'
 
-      # Cache Julia packages
-      - name: Cache Julia packages
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.julia/packages
-            ~/.julia/artifacts
-          key: ${{ runner.os }}-julia-${{ hashFiles('Project.toml', 'Manifest.toml') }}
-
       - name: Instantiate project
-        run: julia -e 'using Pkg; Pkg.instantiate()'
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Run 2D Poisson example
-        run: julia examples/Poisson2D_No_Source.jl
+        run: julia --project=. examples/Poisson2D_No_Source.jl
