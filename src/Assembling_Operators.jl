@@ -108,8 +108,8 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
         dom = DOM[ind]
         nvec = length(dom)
         Oloc = Array{Float64}(undef, nvec, nvec)
-        row[pos:pos+nvec^2-1] = repeat(dom, inner=nvec)
-        col[pos:pos+nvec^2-1] = repeat(dom, outer=nvec)
+        row[pos:pos+nvec^2-1] = repeat(dom, outer=nvec)
+        col[pos:pos+nvec^2-1] = repeat(dom, inner=nvec)
         measures = [SingleEFGMeasure(Shapes, ind, a, coords[ind, :]) for a in 1:nvec]
         weightjac = gs[ind, end] * gs[ind, end-1]
         @inbounds for a in 1:nvec
@@ -145,12 +145,13 @@ function Linear_Assembler(f::Function, Space::EFGSpace)
         nvec = length(dom)
         row[pos:pos+nvec-1] = DOM[ind]
         Qloc = Vector{Float64}(undef, nvec)
+        weightjac=gs[ind, end] * gs[ind, end-1]
         @inbounds for a in 1:nvec
             aMeasure = SingleEFGMeasure(Shapes, ind, a, coords[ind, :])
             aux = unit_measure(aMeasure)
             Value, _ = f(aMeasure)
             Qloc[a] = aux * Value
-            Qloc[a] = Qloc[a] * gs[ind, end] * gs[ind, end-1]
+            Qloc[a] = Qloc[a] * weightjac
         end
         val[pos:pos+nvec-1] = Qloc
         pos += nvec
