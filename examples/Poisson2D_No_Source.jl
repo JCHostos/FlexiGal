@@ -13,13 +13,15 @@ dΓ4 = BackgroundIntegration(model, "Top", ngpts)
 @time Tspace = EFG_Space(model, [dΩ, dΓ1, dΓ2, dΓ3, dΓ4],Float64, dm; 
 Dirichlet_Measures=[dΓ1, dΓ2, dΓ3, dΓ4], Dirichlet_Values=[0.0,x->5*x[1], 5.0, x->5*x[1]])
 k = 1.0
-w(x) = VectorField(150 * (x[2] - 0.5), -150 * (x[1] - 0.5))
-a(δT, T) = ∫(∇(δT) ⋅ (k * ∇(T)) - δT * (w ⋅ ∇(T)))dΩ
+v(x) = VectorField(150.0,0.0)
+#w = VectorField(0.0,0.0)
+a(δT, T) = ∫(∇(δT) ⋅ (k * ∇(T)) + δT * (v ⋅ ∇(T)))dΩ
 @time A, F = Linear_Problem(a, Tspace)
 @time T = A \ F;
 Th = EFGFunction(T, Tspace, dΩ)
 Tgauss = Get_Point_Values(Th)
 ∇Th = ∇(Th)
+∇Tgauss = Get_Point_Values(∇Th)
 gs = dΩ.gs
 if !haskey(ENV, "GITHUB_ACTIONS")
     using GLMakie

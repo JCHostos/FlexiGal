@@ -139,7 +139,7 @@ end
         return VecSingleEFGMeasure(as * b.vec, b.ind, b.coord)
     elseif isa(as, VectorField)
         # a(coord) devuelve un vector: producto escalar
-        value = sum(as[i] * b.vec[i] for i in 1:length(b.vec))
+        value = sum(-as[i] * b.vec[i] for i in 1:length(b.vec))
         return SingleEFGMeasure(value, b.vec, b.ind, b.coord)
     else
         error("Internal_Product: valor de retorno inesperado")
@@ -271,7 +271,7 @@ import Base: ⋅
 (⋅)(a::Composition{VecEFGFunction}, b::SingleEFGMeasure) = Internal_Product(a,b)
 (⋅)(a::Composition{VecEFGFunction}, b::VecSingleEFGMeasure) = Internal_Product(a,b)
 (⋅)(v::VectorField{D,T}, g::VecSingleEFGMeasure) where {D,T} =
-SingleEFGMeasure(sum(v[i] * g.vec[i] for i in 1:D), g.vec, g.ind, g.coord)
+SingleEFGMeasure(sum(-v[i] * g.vec[i] for i in 1:D), g.vec, g.ind, g.coord)
 (⋅)(a::Int, b::Int) = a*b
 (⋅)(a::Int, b::Vector{Float64}) = a * b
 (⋅)(a::Vector{Float64},b::Int) = a * b

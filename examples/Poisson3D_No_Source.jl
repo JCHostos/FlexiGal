@@ -1,10 +1,10 @@
 using FlexiGal
 Domain = (1.0, 1.0, 0.1)
-Divisions = (20, 20, 2)
+Divisions = (29, 29, 2)
 dmax = [1.35, 1.35, 1.05]
 model = create_model(Domain, Divisions)
 dm = Influence_Domains(model, Domain, Divisions, dmax)
-ngpts = 3
+ngpts =3
 dΩ = BackgroundIntegration(model, "Domain", ngpts)
 dΓ1 = BackgroundIntegration(model, "Left", ngpts)
 dΓ2 = BackgroundIntegration(model, "Back", ngpts)
