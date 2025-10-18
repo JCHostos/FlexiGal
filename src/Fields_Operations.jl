@@ -35,7 +35,12 @@ struct VecEFGFunction
     fdom::Vector{Vector{Float64}}
     VEC::Vector{Matrix{Float64}}
 end
-∇(f::EFGFunction) = VecEFGFunction(f.fdom, f.DPHI)
+struct Nabla end 
+const ∇ = Nabla()
+
+@inline function (∇::Nabla)(f::EFGFunction)
+    return VecEFGFunction(f.fdom, f.DPHI)
+end
 function Get_Point_Values(f::VecEFGFunction)
     ngauss = length(f.VEC)
     VEC = f.VEC
@@ -53,7 +58,7 @@ end
     return a.VEC[ind]'*a.fdom[ind]
 end
 
-@inline ∇(::Nothing) = nothing
+@inline (∇::Nabla)(::Nothing) = nothing
 
 # Operations over EFGMeasures
 struct SingleEFGMeasure
@@ -75,7 +80,7 @@ struct VecSingleEFGMeasure
     ind::Int
     coord::Vector{Float64}
 end
-@inline function ∇(SingleEFG::SingleEFGMeasure)
+@inline function (∇::Nabla)(SingleEFG::SingleEFGMeasure)
     return VecSingleEFGMeasure(SingleEFG.dphi,SingleEFG.ind,SingleEFG.coord)
 end
 
@@ -216,6 +221,31 @@ VectorField(x::Vararg{T,D}) where {T,D} = VectorField{D,T}(x)
 Base.getindex(v::VectorField{D,T}, i::Int) where {D,T} = v.data[i]
 Base.length(::VectorField{D,T}) where {D,T} = D
 
+@inline function (∇::Nabla)(v::VectorField{D,SingleEFGMeasure}) where {D}
+    return VectorField{D,VecSingleEFGMeasure}(
+        ntuple(i -> ∇(v[i]), D)
+    )
+end
+
+@inline function Internal_Product(a::VectorField{D,VecSingleEFGMeasure},
+                                 b::VectorField{D,VecSingleEFGMeasure}) where {D}
+    M = zeros(Float64, D, D)
+    @inbounds for α in 1:D
+        # Si hay acoplo (por ejemplo un tensor constitutivo), aquí entraría:
+            M[α, α] = dot(a[α].vec, b[α].vec)
+    end
+    return M
+end
+
+@inline function Internal_Product(a::VectorField{D,SingleEFGMeasure},
+                                 b::VectorField{D,SingleEFGMeasure}) where {D}
+    M = zeros(Float64, D, D)
+    @inbounds for α in 1:D
+            M[α, α] = a[α].phi*b[α].phi
+    end
+    return M
+end
+
 # Constructor para Integral
 struct Integrand{T}
     object::T
@@ -272,9 +302,12 @@ import Base: ⋅
 (⋅)(a::Composition{VecEFGFunction}, b::VecSingleEFGMeasure) = Internal_Product(a,b)
 (⋅)(v::VectorField{D,T}, g::VecSingleEFGMeasure) where {D,T} =
 SingleEFGMeasure(sum(v[i] * g.vec[i] for i in 1:D), g.vec, g.ind, g.coord)
+(⋅)(a::VectorField{D,SingleEFGMeasure},b::VectorField{D,SingleEFGMeasure})  where {D} = Internal_Product(a,b)
 (⋅)(a::Int, b::Int) = a*b
 (⋅)(a::Int, b::Vector{Float64}) = a * b
 (⋅)(a::Vector{Float64},b::Int) = a * b
+import Base: ⊙
+(⊙)(a::VectorField{D,VecSingleEFGMeasure},b::VectorField{D,VecSingleEFGMeasure})  where {D} = Internal_Product(a,b)
 # Nothing Operations
 (*)(::Nothing,::Nothing)=nothing
 (⋅)(::Nothing,::Nothing)=nothing
