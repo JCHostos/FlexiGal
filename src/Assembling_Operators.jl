@@ -93,6 +93,7 @@ end
 function Bilinear_Assembler(f::Function, Space::EFGSpace)
     _, dX = f(nothing, nothing)
     Shapes = EFG_Measure(dX, Space)
+    
     DOM, nnodes = Shapes.DOM, Shapes.nnodes
     dX = merge(dX)
     gs = dX.gs

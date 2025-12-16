@@ -151,7 +151,6 @@ end
     end
 end
 
-
 # Composiciones de EFGFunctions con Funciones
 struct Composition{T<:Union{EFGFunction, VecEFGFunction}}
     f::Function
@@ -227,14 +226,47 @@ Base.length(::VectorField{D,T}) where {D,T} = D
     )
 end
 
+struct AdjointGrad{D}
+    g::VectorField{D,VecSingleEFGMeasure}
+end
+
+import Base: adjoint
+
+@inline adjoint(g::VectorField{D,VecSingleEFGMeasure}) where {D} =
+    AdjointGrad{D}(g)
+
+@inline field_dim(::Type{Float64}) = 1
+@inline field_dim(::Type{VectorField{D,T}}) where {D,T} = D
+
 @inline function Internal_Product(a::VectorField{D,VecSingleEFGMeasure},
                                  b::VectorField{D,VecSingleEFGMeasure}) where {D}
     M = zeros(Float64, D, D)
     @inbounds for α in 1:D
-        # Si hay acoplo (por ejemplo un tensor constitutivo), aquí entraría:
             M[α, α] = dot(a[α].vec, b[α].vec)
     end
     return M
+end
+
+@inline function Internal_Product(a::VectorField{D,VecSingleEFGMeasure},
+                     b::AdjointGrad{D}) where {D}
+    M = zeros(Float64, D, D)
+    g = b.g
+    @inbounds for α in 1:D
+        M[α, α] = dot(a[α].vec, g[α].vec)
+    end
+    return M
+end
+
+@inline function sum_tensors(a::VectorField{D,VecSingleEFGMeasure},
+                   b::AdjointGrad{D}) where {D}
+    g = b.g
+    return VectorField{D,VecSingleEFGMeasure}(
+        ntuple(α -> VecSingleEFGMeasure(
+            a[α].vec .+ g[α].vec,
+            a[α].ind,
+            a[α].coord
+        ), D)
+    )
 end
 
 @inline function Internal_Product(a::VectorField{D,SingleEFGMeasure},
@@ -308,6 +340,7 @@ SingleEFGMeasure(sum(v[i] * g.vec[i] for i in 1:D), g.vec, g.ind, g.coord)
 (⋅)(a::Vector{Float64},b::Int) = a * b
 import Base: ⊙
 (⊙)(a::VectorField{D,VecSingleEFGMeasure},b::VectorField{D,VecSingleEFGMeasure})  where {D} = Internal_Product(a,b)
+(⊙)(a::VectorField{D,VecSingleEFGMeasure},b::AdjointGrad{D})  where {D} = Internal_Product(a,b)
 # Nothing Operations
 (*)(::Nothing,::Nothing)=nothing
 (⋅)(::Nothing,::Nothing)=nothing
@@ -316,5 +349,6 @@ import Base: ⊙
 
 import Base: +
 (+)(::Nothing,::Nothing) = nothing
+(+)(a::VectorField{D,VecSingleEFGMeasure},b::AdjointGrad{D}) where {D} = sum_tensors(a,b)
 import Base: -
 (-)(a::Nothing,b::Nothing) = nothing
