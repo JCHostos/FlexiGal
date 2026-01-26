@@ -13,7 +13,7 @@ P=-1.0
 I₀=Ly^3/12
 model = create_model(Domain, Divisions; map=shift)
 dm = Influence_Domains(model, Domain, Divisions, dmax)
-ngpts = 2
+ngpts = 3
 dΩ = BackgroundIntegration(model, "Domain", ngpts)
 dΓ1 = BackgroundIntegration(model, "Left", ngpts)
 dΓ2 = BackgroundIntegration(model, "Right", ngpts)

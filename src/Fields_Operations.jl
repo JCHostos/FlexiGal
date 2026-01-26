@@ -106,7 +106,7 @@ struct CompositeEFGFunction
     coeffs::Vector{Float64}
 end
 
-import Base: adjoint
+import LinearAlgebra: adjoint
 
 @inline adjoint(f::VecEFGFunction) = TransposedVecEFGFunction(f)
 
@@ -315,17 +315,9 @@ end
 
 @inline function Internal_Product(a::DivergenceScalar{D},
     b::DivergenceScalar{D}) where {D}
-    M = zeros(Float64, D, D)
     ga = a.divfield.vec
     gb = b.divfield.vec
-
-    @inbounds for i in 1:D
-        for j in 1:D
-            # Esto acopla el DoF i con el DoF j
-            M[i, j] = ga[i] * gb[j]
-        end
-    end
-    return M
+    return ga*gb'
 end
 
 struct AdjointGrad{D}
@@ -340,11 +332,9 @@ end
 
 @inline function Internal_Product(a::VectorField{D,SingleEFGMeasure},
     b::VectorField{D,SingleEFGMeasure}) where {D}
-    M = zeros(Float64, D, D)
-    @inbounds for α in 1:D
-        M[α, α] = a[α].phi * b[α].phi
-    end
-    return M
+    va = getfield.(a.data, :phi)
+    vb = getfield.(b.data, :phi)
+    return (va .* vb) .* I(D)
 end
 
 @inline function Internal_Product(a::VectorField{D,VecSingleEFGMeasure},
@@ -417,7 +407,7 @@ const AnyEFGField = Union{EFGFunction, VecEFGFunction, TransposedVecEFGFunction,
 import Base: +
 import Base: -
 import Base: *
-import Base: ⋅
+import LinearAlgebra: ⋅
 import Base: ⊙
 
 @inline (+)(a::VectorField{D,T}, b::AdjointGrad{D}) where {D,T} = sum_tensors(a, b)

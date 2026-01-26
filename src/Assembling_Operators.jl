@@ -25,11 +25,11 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
                 dom = DOM[ind]
                 nvec = length(dom)
                 weightjac = gs[ind, end] * gs[ind, end-1]
-                coord=coords[ind,:]
+                coord = coords[ind, :]
                 @inbounds for a in 1:nvec
                     I = dom[a]
                     scalar_a = SingleEFGMeasure(Shapes, ind, a, coord)
-                    @inbounds for b in 1:nvec
+                    @inbounds @simd for b in 1:nvec
                         J = dom[b]
                         scalar_b = SingleEFGMeasure(Shapes, ind, b, coord)
                         res_eval = f(scalar_a, scalar_b)
@@ -47,13 +47,13 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
                 dom = DOM[ind]
                 nvec = length(dom)
                 weightjac = gs[ind, end] * gs[ind, end-1]
-                coord=coords[ind,:]
+                coord = coords[ind, :]
                 @inbounds for a in 1:nvec
                     I = dom[a]
                     offset_i = (I - 1) * D  # Pre-calculamos el offset de fila
                     scalar_a = SingleEFGMeasure(Shapes, ind, a, coord)
                     v_meas_a = VectorField(ntuple(i -> scalar_a, D)...)
-                    @inbounds for b in 1:nvec
+                    @inbounds @simd for b in 1:nvec
                         J = dom[b]
                         offset_j = (J - 1) * D # Pre-calculamos el offset de columna
                         scalar_b = SingleEFGMeasure(Shapes, ind, b, coord)
@@ -62,7 +62,7 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
                         Kab = res_eval.arg # Matriz DxD
 
                         # --- Ensamblaje del bloque DxD optimizado ---
-                        for i in 1:D
+                        @inbounds for i in 1:D
                             r_idx = offset_i + i
                             @inbounds @simd for j in 1:D
                                 c_idx = offset_j + j
@@ -105,11 +105,11 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
                     dom = DOM[ind]
                     nvec = length(dom)
                     weightjac = gs[ind, end] * gs[ind, end-1]
-                    coord=coords[ind,:]
+                    coord = coords[ind, :]
                     @inbounds for a in 1:nvec
                         I = dom[a]
                         scalar_a = SingleEFGMeasure(Shapes, ind, a, coord)
-                        @inbounds for b in 1:nvec
+                        @inbounds @simd for b in 1:nvec
                             J = dom[b]
                             scalar_b = SingleEFGMeasure(Shapes, ind, b, coord)
                             res_eval = f(scalar_a, scalar_b).terms[ii]
@@ -127,12 +127,12 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
                     dom = DOM[ind]
                     nvec = length(dom)
                     weightjac = gs[ind, end] * gs[ind, end-1]
-                    coord=coords[ind,:]
+                    coord = coords[ind, :]
                     @inbounds for a in 1:nvec
                         I = dom[a]
                         scalar_a = SingleEFGMeasure(Shapes, ind, a, coord)
                         v_meas_a = VectorField(ntuple(i -> scalar_a, D)...)
-                        @inbounds for b in 1:nvec
+                        @inbounds @simd for b in 1:nvec
                             J = dom[b]
                             scalar_b = SingleEFGMeasure(Shapes, ind, b, coord)
                             v_meas_b = VectorField(ntuple(i -> scalar_b, D)...)
@@ -142,7 +142,7 @@ function Bilinear_Assembler(f::Function, Space::EFGSpace)
                             # Ensamblaje del bloque DxD
                             @inbounds for i in 1:D
                                 r_idx = (I - 1) * D + i
-                                @inbounds for j in 1:D
+                                @inbounds @simd for j in 1:D
                                     c_idx = (J - 1) * D + j
                                     row[pos] = r_idx
                                     col[pos] = c_idx
