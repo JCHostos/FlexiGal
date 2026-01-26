@@ -3,7 +3,7 @@ include("Geometry.jl")
 include("Shape_Functions.jl")
 include("Integration.jl")
 export create_model, BackgroundIntegration, EFG_Space, Influence_Domains, AssembleEFG, EFGFunction,
-    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, Bilinear_Assembler, Linear_Assembler, VectorField, Linear_Problem
+    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, ⊙, Bilinear_Assembler, Linear_Assembler, VectorField, Linear_Problem
 struct DomainMeasure
     tag::String
     gs::Matrix{Float64}
@@ -27,18 +27,23 @@ function merge(measures::Vector{DomainMeasure}; tag::String="merged")
     return DomainMeasure(tag, all_gs)
 end
 # Constructing Shape Functions given model, Measures for Integration and Influence domains
-struct EFGSpace
+struct EFGSpace{T} # Añadimos un parámetro T para los valores de Dirichlet
     domain::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
     boundary::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
     Field_Type::Type
     Dirichlet_Measures::Vector{DomainMeasure}
-    Dirichlet_Values::Union{Vector{Float64},Vector{Any}}
+    Dirichlet_Values::Vector{T} # Ahora es flexible
     nnodes::Int
 end
 
-function EFG_Space(model::EFGmodel, gs_list::Union{DomainMeasure, Vector{DomainMeasure}},Field_Type::Type,dm::Matrix{Float64};
-    Dirichlet_Measures::Vector{DomainMeasure}=Vector{DomainMeasure}(),Dirichlet_Values::Union{Vector{Float64},Vector{Any}}=Float64[])
-    # Forzar que gs_list siempre sea un vector
+function EFG_Space(model::EFGmodel, 
+                  gs_list::Union{DomainMeasure, Vector{DomainMeasure}}, 
+                  Field_Type::Type, 
+                  dm::Matrix{Float64};
+                  Dirichlet_Measures::Vector{DomainMeasure}=Vector{DomainMeasure}(),
+                  # Cambiamos el default a un vector vacío genérico si no se pasa nada
+                  Dirichlet_Values=Any[]) 
+    
     gs_list = isa(gs_list, DomainMeasure) ? [gs_list] : gs_list
     x = model.x
     results_domain = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
@@ -59,9 +64,9 @@ function EFG_Space(model::EFGmodel, gs_list::Union{DomainMeasure, Vector{DomainM
             results_boundary[tag] = (PHI, DPHI, DOM)
         end
     end
-    gs_list=nothing
-
-    return EFGSpace(results_domain, results_boundary,Field_Type,Dirichlet_Measures,Dirichlet_Values, nnodes)
+    
+    # El compilador de Julia inferirá T automáticamente (Float64 o VectorField)
+    return EFGSpace(results_domain, results_boundary, Field_Type, Dirichlet_Measures, Dirichlet_Values, nnodes)
 end
 # Defining Influence Domains (Ongoing Development)
 function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dmax::Union{Real, AbstractVector{<:Real}})

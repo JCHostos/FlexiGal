@@ -14,7 +14,7 @@ end
 # ------------------------------
 # Function to create a structured cartesian mesh model with tagged entities
 # ------------------------------
-function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where D
+function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}; map::Function=identity) where D
     @assert D == 2 || D == 3 "Solo 2D o 3D soportados"
 
     # Generar nodos y conectividad
@@ -259,6 +259,15 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where
     bottomfront_edges = nothing
     toptback_edges = nothing
     topfront_edges = nothing
+    if map !== identity
+        @inbounds for i in 1:nnodes
+            # Extraemos la fila como una tupla o pequeño vector para el mapa
+            new_coords = map(x[i, :])
+            @simd for d in 1:D
+                x[i, d] = new_coords[d]
+            end
+        end
+    end
     GC.gc()
     # ------------------------------
     # Return model

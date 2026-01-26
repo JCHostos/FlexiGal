@@ -8,8 +8,7 @@ ngpts = 3
 dΩ = BackgroundIntegration(model, "Domain", ngpts)
 dΓ = BackgroundIntegration(model, "Boundary", ngpts)
 @time Tspace = EFG_Space(model, [dΩ, dΓ],Float64, dm; Dirichlet_Measures=[dΓ])
-v(x) = VectorField(-150 * (x[2] - 0.5),150 * (x[1] - 0.5))
-a(δT, T) = ∫(∇(δT) ⋅ ∇(T)+δT * (v ⋅ ∇(T)))dΩ
+a(δT, T) = ∫(∇(δT) ⋅ ∇(T))dΩ
 b(δT) = ∫(5000 * δT)dΩ
 @time A, F = Linear_Problem(a, b, Tspace)
 @time T = A \ F;
