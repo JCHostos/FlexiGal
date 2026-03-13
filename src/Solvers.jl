@@ -185,7 +185,7 @@ function nothing_trace(obj)
     return false
 end
 
-function Prueba_Macro(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
+function NL_Solver(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
     recipe = NL_Op.space
     D = field_dim(recipe.Field_Type)
     nnodes = recipe.model.nnodes
@@ -314,7 +314,7 @@ function Prueba_Macro(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
     β = 1.0
     prev_err = Inf
     for i in 1:max_iter
-        @time K_tan, R_int = Sub_LinearProblem(Jac, Res, recipe, Spaces)
+        K_tan, R_int = Sub_LinearProblem(Jac, Res, recipe, Spaces)
         K_tot = K_tan + Ap
         R_tot = R_int + (Ap * u_nodal)-Fp
         du = K_tot \ R_tot

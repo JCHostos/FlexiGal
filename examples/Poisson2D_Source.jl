@@ -10,5 +10,5 @@ dΩ = IntegrationSet(Ω, ngpts);
 Tspace =  ApproxSpace(model, [Ω, Γ],Float64, dmax; Dirichlet_Boundaries=[Γ]);
 @WeakForm a(δT, T) = ∫(∇(δT) ⋅ ∇(T))dΩ
 @WeakForm b(δT) = ∫(5000 * δT)dΩ
-@time op = Linear_Problem(a, b, Tspace)
+op = Linear_Problem(a, b, Tspace)
 Th = Solve(op,dΩ);

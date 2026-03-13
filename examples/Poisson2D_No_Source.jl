@@ -15,5 +15,5 @@ Dirichlet_Boundaries=[Γ1, Γ2, Γ3, Γ4], Dirichlet_Values=[0.0,x->5*x[1], 5.0,
 const k = 1.0
 const v(x) = VectorField(-100.0 * (x[2] - 0.5), 100.0 * (x[1] - 0.5))
 @WeakForm a(δT, T) = ∫(∇(δT) ⋅ (k * ∇(T)) + δT * (v ⋅ ∇(T)))dΩ
-@time op = Linear_Problem(a, Tspace);
+op = Linear_Problem(a, Tspace);
 Th = Solve(op,dΩ);

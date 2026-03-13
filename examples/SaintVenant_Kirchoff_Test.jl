@@ -37,4 +37,4 @@ end
 
 op = NonLinearOperator(NL_Problem, Uspace);
 
-uh = Prueba_Macro(op; tol = 1e-4, max_iter=50)
+uh = NL_Solver(op; tol = 1e-4, max_iter=50);

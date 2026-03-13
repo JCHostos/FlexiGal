@@ -68,7 +68,7 @@ function Deferred_Piccard(Th, Spaces, fspace, Tspace; tol = 1e-4, max_iter = 60)
     cp_nl(T) = fₛ(T) * cpₛ + (1 - fₛ(T)) * cpₗ
     β=1.0
     while err > tol && iter < max_iter
-        iter += 1 # Ya no necesitas 'global iter'
+        iter += 1
         fₛh = let Th = Th_old, Spaces = Spaces, fspace = fspace
             @WeakForm aₚ(δf, f) = ∫(δf * (f * r))dΩ
             @WeakForm bₚ(δf) = ∫((δf * (fₛ ∘ Th)) * r)dΩ
@@ -95,9 +95,9 @@ function Deferred_Piccard(Th, Spaces, fspace, Tspace; tol = 1e-4, max_iter = 60)
         Th_old = EFGFunction(T_old,Tspace_Built,Measure[1])
     end
     if err <= tol
-        println("--- Convergencia exitosa en $iter iteraciones ---")
+        println("--- Converged in $iter iterations ---")
     else
-        println("--- Advertencia: No hubo convergencia (Error: $err) ---")
+        println("--- Warning: There was not convergence (Error: $err) ---")
     end 
     return Th_new
 end

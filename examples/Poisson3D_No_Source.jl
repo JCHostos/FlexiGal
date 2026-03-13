@@ -14,7 +14,7 @@ Tspace =  ApproxSpace(model, [Ω,Γ1,Γ2], Float64, dmax; Dirichlet_Boundaries=[
 Th = Solve(op,dΩ) 
 Tgauss = Get_Point_Values(Th)
 ∇Th = ∇(Th)
-gs=Th.Measure.gs
+gs=Th.Measure.gs;
 #=using GLMakie
     fig = Figure()
     ax = Axis3(fig[1, 1], aspect=Domain)

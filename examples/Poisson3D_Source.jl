@@ -13,8 +13,8 @@ Tspace =  ApproxSpace(model, [Ω,Γ], Float64, dmax; Dirichlet_Boundaries=[Γ]);
 @WeakForm b(δT) = ∫(5000 * δT)dΩ
 @time op = Linear_Problem(a, b, Tspace)
 @time Th = Solve(op,dΩ)
-Tgauss = Get_Point_Values(Th)
-gs = Th.Measure.gs
+Tgauss = Get_Point_Values(Th);
+gs = Th.Measure.gs;
 #=if !haskey(ENV, "GITHUB_ACTIONS")
     using GLMakie
     fig = Figure()

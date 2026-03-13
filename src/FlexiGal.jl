@@ -7,7 +7,7 @@ include("Integration.jl")
 include("WeakForm_Macro.jl")
 export create_model, BackgroundIntegration, EFG_Space, Influence_Domains, AssembleEFG, EFGFunction, ApproxSpace, Solve, build_space,
     Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, ⊙, Bilinear_Assembler, Linear_Assembler, VectorField, Linear_Problem, plot_field,
-    Triangulation, IntegrationSet, Get_space_from_IntegrationSet, tr, Id, Prueba_Macro, @WeakForm, @NL_WeakForm, NonLinearOperator, Get_Nodal_Values, Get_Measures
+    Triangulation, IntegrationSet, Get_space_from_IntegrationSet, tr, Id, NL_Solver, @WeakForm, @NL_WeakForm, NonLinearOperator, Get_Nodal_Values, Get_Measures
 struct Triangulation
     model::EFGmodel
     tag::String
