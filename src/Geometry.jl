@@ -2,10 +2,12 @@ include("Meshing.jl")
 # ------------------------------
 # Structs for model
 # ------------------------------
-struct EFGmodel
-    x::Matrix{Float64}                               # Nodes Coordinates
-    conn::Matrix{Int}                                # Connectivity
-    entities::Dict{Symbol,Dict{String,Union{Int,Matrix{Int}}}} # entidades con tags
+struct EFGmodel{D}
+    domain::NTuple{D, Float64}    # Nuevo
+    divisions::NTuple{D, Int}     # Nuevo
+    x::Matrix{Float64}
+    conn::Matrix{Int}
+    entities::Dict{Symbol,Dict{String,Union{Int,Matrix{Int}}}}
     dim::Int
     ncells::Int
     nnodes::Int
@@ -19,7 +21,7 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}; map::
 
     # Generar nodos y conectividad
     x, conn, ncells, nnodes = generate_cartesian_mesh(domain, divisions)
-    tol = 1e-15
+    tol = 1e-6
     entities = Dict{Symbol,Dict{String,Union{Int,Matrix{Int}}}}()
     if D == 2
         Nx, Ny = divisions
@@ -272,7 +274,7 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}; map::
     # ------------------------------
     # Return model
     # ------------------------------
-    return EFGmodel(x, conn, entities, D, ncells, nnodes)
+    return EFGmodel{D}(domain,divisions,x,conn,entities,D,ncells,nnodes)
 end
 
 function get_entity(model::EFGmodel, tag::String)

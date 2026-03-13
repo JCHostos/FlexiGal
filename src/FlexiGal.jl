@@ -1,14 +1,30 @@
 module FlexiGal
+using StaticArrays
+using LinearAlgebra
 include("Geometry.jl")
 include("Shape_Functions.jl")
 include("Integration.jl")
-export create_model, BackgroundIntegration, EFG_Space, Influence_Domains, AssembleEFG, EFGFunction,
-    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, ⊙, Bilinear_Assembler, Linear_Assembler, VectorField, Linear_Problem
+include("WeakForm_Macro.jl")
+export create_model, BackgroundIntegration, EFG_Space, Influence_Domains, AssembleEFG, EFGFunction, ApproxSpace, Solve, build_space,
+    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, ⊙, Bilinear_Assembler, Linear_Assembler, VectorField, Linear_Problem, plot_field,
+    Triangulation, IntegrationSet, Get_space_from_IntegrationSet, tr, Id, Prueba_Macro, @WeakForm, @NL_WeakForm, NonLinearOperator, Get_Nodal_Values, Get_Measures
+struct Triangulation
+    model::EFGmodel
+    tag::String
+end
+struct IntegrationSet
+    tri::Triangulation
+    degree::Int
+end
 struct DomainMeasure
     tag::String
     gs::Matrix{Float64}
+    degree::Int
 end
-function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
+function BackgroundIntegration(iset::IntegrationSet)
+    model = iset.tri.model
+    tag = iset.tri.tag
+    degree = iset.degree
     conn = get_entity(model, tag)
     gauss = pgauss(degree)
     dim = size(model.x, 2)
@@ -17,59 +33,93 @@ function BackgroundIntegration(model::EFGmodel, tag::String, degree::Int)
     elseif size(conn, 2) == 2^(dim - 1)
         gs = egauss_bound(model.x, conn, gauss)
     end
-    conn= nothing
-    return DomainMeasure(tag, gs)
+    conn = nothing
+    return DomainMeasure(tag, gs,degree)
 end
-function merge(measures::Vector{DomainMeasure}; tag::String="merged")
-    isempty(measures) && error("No DomainMeasure to merge")
+@inline merge(measure::DomainMeasure; tag="merged") = measure
 
+@inline function merge(measures::Vector{DomainMeasure}; tag::String="merged")
+    isempty(measures) && error("No DomainMeasure to merge")
     all_gs = vcat([m.gs for m in measures]...)
-    return DomainMeasure(tag, all_gs)
+    return DomainMeasure(tag, all_gs, measures[1].degree)
+end
+
+struct ApproxSpace{DV}
+    model::EFGmodel
+    triangulations::Vector{Triangulation} # Antes era measures
+    Field_Type::Type
+    dmax::Union{Float64,Vector{Float64}}
+    Dirichlet_Boundaries::Vector{Triangulation}
+    Dirichlet_Values::Vector{DV}
+end
+
+# El constructor que usaremos en tu script
+function ApproxSpace(model, triangs, Field_Type, dmax;
+    Dirichlet_Boundaries = Triangulation[],
+    Dirichlet_Values = Float64[])
+    T = triangs isa Triangulation ? [triangs] : triangs
+    DT = Dirichlet_Boundaries isa Triangulation ? [Dirichlet_Boundaries] : Dirichlet_Boundaries
+    DV = eltype(Dirichlet_Values) 
+    return ApproxSpace{DV}(model, T, Field_Type, dmax, DT, Dirichlet_Values)
 end
 # Constructing Shape Functions given model, Measures for Integration and Influence domains
-struct EFGSpace{T} # Añadimos un parámetro T para los valores de Dirichlet
-    domain::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
-    boundary::Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}
+struct EFGSpace{DG}
+    domain::Dict{String,Tuple{
+        Vector{Vector{Float64}},
+        Vector{Vector{SVector{DG, Float64}}},
+        Vector{Vector{Int}}
+    }}
+    boundary::Dict{String,Tuple{
+        Vector{Vector{Float64}},
+        Vector{Vector{SVector{DG, Float64}}},
+        Vector{Vector{Int}}
+    }}
     Field_Type::Type
-    Dirichlet_Measures::Vector{DomainMeasure}
-    Dirichlet_Values::Vector{T} # Ahora es flexible
+    Measures::Vector{DomainMeasure}
     nnodes::Int
 end
 
-function EFG_Space(model::EFGmodel, 
-                  gs_list::Union{DomainMeasure, Vector{DomainMeasure}}, 
-                  Field_Type::Type, 
-                  dm::Matrix{Float64};
-                  Dirichlet_Measures::Vector{DomainMeasure}=Vector{DomainMeasure}(),
-                  # Cambiamos el default a un vector vacío genérico si no se pasa nada
-                  Dirichlet_Values=Any[]) 
-    
-    gs_list = isa(gs_list, DomainMeasure) ? [gs_list] : gs_list
-    x = model.x
-    results_domain = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
-    results_boundary = Dict{String,Tuple{Vector{Vector{Float64}},Vector{Matrix{Float64}},Vector{Vector{Int}}}}()
-    nnodes, dim = size(x)
+function EFG_Space(model::EFGmodel{DG}, # DG sale del modelo (2 o 3)
+    gs_list::Vector{DomainMeasure},
+    Field_Type::Type,
+    dm::Matrix{Float64}) where DG
 
+    x = model.x
+    
+    # Definimos el tipo de la tupla para no escribirlo mil veces
+    T_Shape = Tuple{Vector{Vector{Float64}}, Vector{Vector{SVector{DG, Float64}}}, Vector{Vector{Int}}}
+    
+    results_domain = Dict{String, T_Shape}()
+    results_boundary = Dict{String, T_Shape}()
+    
+    nnodes, dim = size(x)
+    
     for measure in gs_list
         tag = measure.tag
         gs = measure.gs
         conn = get_entity(model, tag)
         gs_type = size(conn, 2) == 2^dim ? :domain : :boundary
-
+        
+        # Ahora SHAPE_FUN devuelve los SVectors perfectamente
         PHI, DPHI, DOM = SHAPE_FUN(gs, x, dm)
-
-        if gs_type == :domain
+        
+        if gs_type === :domain
             results_domain[tag] = (PHI, DPHI, DOM)
         else
             results_boundary[tag] = (PHI, DPHI, DOM)
         end
     end
     
-    # El compilador de Julia inferirá T automáticamente (Float64 o VectorField)
-    return EFGSpace(results_domain, results_boundary, Field_Type, Dirichlet_Measures, Dirichlet_Values, nnodes)
+    return EFGSpace{DG}( # Pasamos el parámetro DG
+        results_domain,
+        results_boundary,
+        Field_Type,
+        gs_list,
+        nnodes
+    )
 end
 # Defining Influence Domains (Ongoing Development)
-function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dmax::Union{Real, AbstractVector{<:Real}})
+function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dmax::Union{Real,AbstractVector{<:Real}})
     dim = size(model.x, 2)
     dm = zeros(size(model.x, 1), dim)
     # Convertir dmax a vector de longitud dim
@@ -93,91 +143,45 @@ function Influence_Domains(model::EFGmodel, Domain::Tuple, Divisions::Tuple, dma
     return dm
 end
 
-# Beta Version for Assembling EFG Matrices and Vectors
-function AssembleEFG(
-    Measures::Union{DomainMeasure, AbstractVector{<:DomainMeasure}},
-    Shape_Functions::EFGSpace,
-    matrix_type::String; prop=1.0
-)
-    measures_list = isa(Measures, DomainMeasure) ? [Measures] : Measures
-    nnodes = Shape_Functions.nnodes
-
-    all_gs   = Matrix{Float64}(undef, 0, size(first(measures_list).gs, 2))
-    all_PHI  = Vector{Vector{Float64}}()
-    all_DPHI = Vector{Matrix{Float64}}()
-    all_DOM  = Vector{Vector{Int}}()
-
-    for m in measures_list
-        tag, gs = m.tag, m.gs
-
-        shape = if haskey(Shape_Functions.domain, tag)
-            Shape_Functions.domain[tag]
-        elseif haskey(Shape_Functions.boundary, tag)
-            Shape_Functions.boundary[tag]
-        else
-            error("There are no shape functions for the tag '$tag'.")
-        end
-
-        PHI, DPHI, DOM = shape
-
-        all_gs   = vcat(all_gs, gs)
-        append!(all_PHI,  PHI)
-        append!(all_DPHI, DPHI)
-        append!(all_DOM,  DOM)
-    end
-
-    # liberar referencias
-    PHI = nothing; DPHI = nothing; DOM = nothing; gs = nothing
-
-    if matrix_type == "Laplacian"
-        return COND_MATRIX(prop, all_gs, all_DPHI, all_DOM, nnodes)
-    elseif matrix_type == "Mass"
-        return CAP_MATRIX(prop, all_gs, all_PHI, all_DOM, nnodes)
-    elseif matrix_type == "Load"
-        return LOAD_VECTOR(prop, all_gs, all_PHI, all_DOM, nnodes)
-    else
-        error("Matrix Type '$matrix_type' not recognised. Use 'Laplacian', 'Mass' or 'Load'.")
-    end
-end
-
-struct EFGMeasure
+struct EFGMeasure{DG}
     PHI::Vector{Vector{Float64}}
-    DPHI::Vector{Matrix{Float64}}
+    DPHI::Vector{Vector{SVector{DG,Float64}}} # Formato optimizado
     DOM::Vector{Vector{Int}}
     nnodes::Int
 end
-function EFG_Measure(measures::Union{DomainMeasure, AbstractVector{<:DomainMeasure}}, Shape_Functions::EFGSpace)
-    # Asegurar que measures sea un vector
+function EFG_Measure(measures::Union{DomainMeasure,AbstractVector{<:DomainMeasure}}, Shape_Functions::EFGSpace)
     measures_list = isa(measures, DomainMeasure) ? [measures] : measures
-
+    DG = typeof(Shape_Functions).parameters[1] 
     all_PHI = Vector{Vector{Float64}}()
-    all_DPHI = Vector{Matrix{Float64}}()
+    all_DPHI = Vector{Vector{SVector{DG, Float64}}}() 
     all_DOM = Vector{Vector{Int}}()
-
     for sm in measures_list
-        tag = sm.tag   # extraer tag del DomainMeasure
-
-        shape = 
-            if haskey(Shape_Functions.domain, tag)
-                Shape_Functions.domain[tag]
-            elseif haskey(Shape_Functions.boundary, tag)
-                Shape_Functions.boundary[tag]
-            else
+        tag = sm.tag
+        shape = haskey(Shape_Functions.domain, tag) ? Shape_Functions.domain[tag] :
+                haskey(Shape_Functions.boundary, tag) ? Shape_Functions.boundary[tag] :
                 error("No shape functions for tag '$tag'")
-            end
-        
-        PHI, DPHI, DOM = shape
+        PHI, DPHI, DOM = shape 
         append!(all_PHI, PHI)
-        append!(all_DPHI, DPHI)
+        append!(all_DPHI, DPHI) # Ahora append! solo copia punteros a los SVectors
         append!(all_DOM, DOM)
     end
+    return EFGMeasure{DG}(all_PHI, all_DPHI, all_DOM, Shape_Functions.nnodes)
+end
 
-    # Limpiar referencias temporales
-    PHI=DPHI=DOM=nothing
-    nnodes = Shape_Functions.nnodes
-    return EFGMeasure(all_PHI, all_DPHI, all_DOM, nnodes)
+function build_space(recipe::ApproxSpace, isets::Vector{IntegrationSet})
+    m  = recipe.model
+    dm = Influence_Domains(m, m.domain, m.divisions, recipe.dmax)
+    Measures = [BackgroundIntegration(iset) for iset in isets]
+    return EFG_Space(
+        m,
+        Measures,
+        recipe.Field_Type,
+        dm
+    )
 end
 
 include("Fields_Operations.jl")
 include("Assembling_Operators.jl")
+include("Solvers.jl")
+include("Plots.jl")
 end

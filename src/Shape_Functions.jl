@@ -178,9 +178,14 @@ function Improved_Moving_Least_Squares(gpos, x, v, dm)
     # Construir phi y derivadas
     B = p .* w
     phi = (B * gam[:, 1])
-    dphi = zeros(L,dim)
-    for d in 1:dim
-        dphi[:,d] = ((B * gam[:, d+1]) + ((p .* dw[:, d]) * gam[:, 1]))
+    dphi_x = (B * gam[:, 2]) + ((p .* dw[:, 1]) * gam[:, 1])
+    dphi_y = (B * gam[:, 3]) + ((p .* dw[:, 2]) * gam[:, 1])
+    
+    if dim == 2
+        dphi = [SVector{2, Float64}(dphi_x[a], dphi_y[a]) for a in 1:L]
+    else
+        dphi_z = (B * gam[:, 4]) + ((p .* dw[:, 3]) * gam[:, 1])
+        dphi = [SVector{3, Float64}(dphi_x[a], dphi_y[a], dphi_z[a]) for a in 1:L]
     end
 
     return phi, dphi
@@ -202,25 +207,19 @@ Calcula las funciones de forma tipo MLS para cada punto de Gauss.
 - `DOM`   : Vector de vectores con índices de nodos de influencia por punto de Gauss
 """
 function SHAPE_FUN(gs, x, dm)
-    # Inicializar vectores de resultados
     numqc = size(gs, 1)
-    dim = size(x, 2)  # 2 o 3
-    PHI = [Float64[] for _ in 1:numqc]
-    DPHI = [zeros(Float64, 0, 0) for _ in 1:numqc]
-    DOM = [Int[] for _ in 1:numqc]
-
-    @inbounds for (ind, gg) in enumerate(eachrow(gs))
-        gpos = gg[1:dim]
-        v = domain(gpos, x, dm)   # nodos de influencia para este punto
-
-        # Función de forma y derivadas (shape_general devuelve phi y dphi)
+    dim = size(x, 2)
+    PHI = Vector{Vector{Float64}}(undef, numqc)
+    # El tipo ahora es explícito: Vector de Vectores de SVectors
+    DPHI = Vector{Vector{SVector{dim, Float64}}}(undef, numqc)
+    DOM = Vector{Vector{Int}}(undef, numqc)
+    @inbounds for ind in 1:numqc
+        gpos = SVector{dim, Float64}(gs[ind, 1:dim]) # gpos como SVector ayuda mucho
+        v = domain(gpos, x, dm)
         phi, dphi = Improved_Moving_Least_Squares(gpos, x, v, dm)
-
-        # Guardar resultados
         PHI[ind] = phi
         DPHI[ind] = dphi
         DOM[ind] = v
     end
-
     return PHI, DPHI, DOM
 end

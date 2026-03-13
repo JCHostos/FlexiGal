@@ -2,50 +2,41 @@ using FlexiGal
 Lx=5.0
 Ly=1.0
 Domain = (Lx, Ly)
-Divisions = (200, 40)
+Divisions = (50, 10)
 dmax = 1.75
-E=1000.0;
-ν=0.3;
-G=E/(2*(1+ν));
-λ=E*ν/((1+ν)*(1-2*ν));
-shift(x)=[x[1], x[2]-0.5];
-P=-1.0
+const E=1000.0;
+const ν=0.3;
+const G=E/(2*(1+ν));
+const λ=E*ν/((1+ν)*(1-2*ν));
+shift(x)=[x[1], x[2]-Ly/2];
+P=-0.001
 I₀=Ly^3/12
 model = create_model(Domain, Divisions; map=shift)
-dm = Influence_Domains(model, Domain, Divisions, dmax)
 ngpts = 3
-dΩ = BackgroundIntegration(model, "Domain", ngpts)
-dΓ1 = BackgroundIntegration(model, "Left", ngpts)
-dΓ2 = BackgroundIntegration(model, "Right", ngpts)
-u₀(x)=VectorField(-P*(2+ν)*x[2]/(6*E*I₀)*(x[2]^2-Ly^2/4), P*ν*Lx/(2*E*I₀)*x[2]^2)
-@time Uspace = EFG_Space(model, [dΩ, dΓ1, dΓ2], VectorField{2,Float64}, dm; Dirichlet_Measures=[dΓ1],Dirichlet_Values=[u₀])
-s(x)=VectorField(0.0,P/(2*I₀)*(Ly^2/4 - x[2]^2))
-# Bilinear y linear
-a(δu, u) = ∫(G*(∇(δu) ⊙ (∇(u)+∇(u)')) + λ*((∇⋅δu)*(∇⋅u)))dΩ
-b(δu)    = ∫(δu ⋅ s)dΓ2
+Ω = Triangulation(model, "Domain")
+Γ1 = Triangulation(model, "Left")
+Γ2 = Triangulation(model, "Right")
+dΩ = IntegrationSet(Ω, ngpts)
+dΓ2 = IntegrationSet(Γ2, ngpts) 
+const u₀(x)=VectorField(-P*(2+ν)*x[2]/(6*E*I₀)*(x[2]^2-Ly^2/4), P*ν*Lx/(2*E*I₀)*x[2]^2)
+Uspace = ApproxSpace(model, [Ω, Γ1, Γ2], VectorField{2,Float64}, dmax; Dirichlet_Boundaries=[Γ1],Dirichlet_Values=[u₀])
+const s(x)=VectorField(0.0,P/(2*I₀)*(Ly^2/4 - x[2]^2))
+const g=VectorField(0.0,-1.0)
+σ(u)=G*(∇(u)+∇(u)')+λ*(∇⋅u)*Id
+@WeakForm a(δu, u) = ∫(∇(δu)⊙σ(u))dΩ;
+@WeakForm b(δu) = ∫(δu ⋅ s)dΓ2;
+op = Linear_Problem(a, b, Uspace);
+uh = Solve(op);
 
-@time A, F = Linear_Problem(a, b, Uspace)
-@time u = A \ F
-
-uh = EFGFunction(u, Uspace, dΩ)
-ugauss = Get_Point_Values(uh)
-
-# 1. Extraemos ux y uy de ugauss
-ux = [v[1] for v in ugauss]
-uy = [v[2] for v in ugauss]
-mod_u = [sqrt(v[1]^2 + v[2]^2) for v in ugauss]
-σh = G * (∇(uh) + ∇(uh)') + λ * (∇ ⋅ uh)
-σh_gauss = Get_Point_Values(σh)
-σₓₓ = [v[1,1] for v in σh_gauss]
-# 2. Definimos un factor de amplificación (ajustalo si no se ve nada)
-factor = 1.0 
-
-gs = dΩ.gs
-if !haskey(ENV, "GITHUB_ACTIONS")
-    using GLMakie
-    fig = Figure()
-    ax = Axis(fig[1, 1], aspect=Domain[1] / Domain[2])
-    scatter!(ax, gs[:, 1] .+ ux .* factor, gs[:, 2] .+ uy .* factor; 
-             color=σₓₓ, markersize=4, colormap=:jet)
-    display(fig)
-end
+#=op2 = let uh=uh
+Egreen(u)=1/2*(∇(u)+∇(u)'+(∇(u)')*∇(u))
+dEgreen(du)=1/2*(∇(du)+∇(du)'+(∇(du)')*∇(uh)+(∇(uh)')*∇(du))
+Sₛ = 2*G*Egreen(uh)
+Sᵥ = λ*tr(Egreen(uh))*Id
+dSₛ(du) = 2*G*dEgreen(du)
+dSᵥ(du) = λ*tr(dEgreen(du))*Id
+@WeakForm a2(δu, du) = ∫(∇(δu)⊙((Sₛ+Sᵥ)*∇(du))+dEgreen(δu)⊙(dSₛ(du)+dSᵥ(du)))dΩ
+@WeakForm b(δu)  = ∫((dEgreen(δu))⊙(Sₛ+Sᵥ))dΩ - ∫(δu ⋅ s)dΓ2
+@time Linear_Problem(a2, b, Uspace);
+end;
+uh2 = Solve(op2,dΩ);=#
