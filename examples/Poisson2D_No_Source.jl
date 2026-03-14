@@ -1,7 +1,7 @@
 using FlexiGal
 Domain = (1.0, 1.0)
-Divisions = (50,50)
-dmax = 1.5
+Divisions = (60,60)
+dmax = 1.75
 model = create_model(Domain, Divisions);
 ngpts = 3;
 Ω = Triangulation(model, "Domain");

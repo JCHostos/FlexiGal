@@ -2,7 +2,7 @@ using FlexiGal
 Lx=5.0
 Ly=1.0
 Domain = (Lx, Ly)
-Divisions = (100, 20)
+Divisions = (200, 40)
 dmax = [1.75,1.75];
 const E=1000.0;
 const ν=0.3;

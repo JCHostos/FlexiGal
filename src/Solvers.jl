@@ -42,133 +42,6 @@ struct NonLinearOperator
     space::ApproxSpace
 end
 
-function NLSolver(Jacobian, Residual, recipe::ApproxSpace, iset::IntegrationSet; u_seed=nothing, tol=1e-6, max_iter=15)
-    res_jac = Jacobian
-    res_res = Residual
-    D = field_dim(recipe.Field_Type)
-    nnodes = recipe.model.nnodes
-    ndofs = D * nnodes
-    u_nodal = (u_seed === nothing) ? zeros(Float64, ndofs) : copy(u_seed)
-    max_deg = 1
-    Spaces = Dict{IntegrationSet,EFGSpace}()
-    if res_jac isa Integrated
-        isets = [res_jac.b]
-        max_deg = max(max_deg, res_jac.b.degree)
-        if !haskey(Spaces, res_jac.b)
-            println("Constructing new")
-            Space = build_space(recipe, isets)
-            for s in isets; Spaces[s] = Space; end
-        else
-            Space = Spaces[res_jac.b]
-        end
-    elseif res_jac isa MultiIntegrated
-        for ii in 1:length(res_jac.terms)
-            term = res_jac.terms[ii]
-            isets = [term.b]
-            max_deg = max(max_deg, term.b.degree)
-            if !haskey(Spaces, term.b)
-            println("Constructing new")
-            Space = build_space(recipe, isets)
-            for s in isets; Spaces[s] = Space; end
-            else
-            Space = Spaces[term.b]
-            end
-        end
-    end
-    if res_res isa Integrated
-        isets = [res_res.b]
-        max_deg = max(max_deg, res_res.b.degree)
-           if !haskey(Spaces, res_res.b)
-                println("Constructing new")
-                Space = build_space(recipe, isets)
-                for s in isets
-                    Spaces[s] = Space
-                end
-           else
-                Space = Spaces[res_res.b]
-           end
-    elseif res_res isa MultiIntegrated
-        for ii in 1:length(res_res.terms)
-            term = res_res.terms[ii]
-            isets = [term.b]
-            max_deg = max(max_deg, term.b.degree)
-            if !haskey(Spaces, term.b)
-                println("Constructing new")
-                Space = build_space(recipe, isets)
-                for s in isets
-                    Spaces[s] = Space
-                end
-            else
-                Space = Spaces[term.b]
-            end
-        end
-    end
-    Ap = spzeros(Float64, ndofs, ndofs)
-    Fp = zeros(Float64, ndofs)
-    α = 1e6
-    if !isempty(recipe.Dirichlet_Boundaries)
-        dsets = [IntegrationSet(tri, max_deg) for tri in recipe.Dirichlet_Boundaries]
-        if !haskey(Spaces, dsets[1])
-            Space_D = build_space(recipe, dsets)
-            for s in dsets
-                Spaces[s] = Space_D
-            end
-        else
-            Space_D = Spaces[dsets[1]]
-        end
-        dΓd = Space_D.Measures
-        if !isempty(recipe.Dirichlet_Values)
-            dirichlet_values = recipe.Dirichlet_Values
-            Fp = zeros(ndofs)
-            for (diri, dΓc) in zip(dirichlet_values, dΓd)
-                f_pen = if D == 1
-                    δu -> (α * (diri * δu))
-                else
-                    δu -> (δu ⋅ (diri * α))
-                end
-                f_pure = (sa) -> begin
-                    m = f_pen(sa)
-                    if D == 1
-                        return m.phi
-                    elseif D == 2
-                        return SVector{2,Float64}(m[1].phi, m[2].phi)
-                    elseif D == 3
-                        return SVector{3,Float64}(m[1].phi, m[2].phi, m[3].phi)
-                    end
-                end
-                Fp .+= Linear_Assembler(f_pure, EFGSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes))
-            end
-        end
-        op_arg =
-            if D == 1
-                (δu, u) -> (α * δu * u)
-            else
-                (δu, u) -> (α * (δu ⋅ u))
-            end
-        f_pure = (sa, sb) -> op_arg(sa, sb)
-        Ap = Bilinear_Assembler(f_pure, Space_D)
-    end
-
-    EFGfunctions = Dict(s => EFGFunction(u_nodal, sp, sp.Measures[1]) for (s, sp) in Spaces)
-    
-    for i in 1:max_iter
-        @time K_tan, R_int = Sub_LinearProblem(Jacobian, Residual, recipe, Spaces)
-        K_tot = K_tan + Ap
-        R_tot = R_int + (Ap * u_nodal)-Fp
-        du = K_tot \ R_tot
-        u_nodal .-= du
-        rel_err = norm(du) / (norm(u_nodal) + 1e-10)
-        println("Error: $rel_err")
-        if rel_err < tol
-           break
-        end
-        #EFGfunctions = Dict(m => EFGFunction(u_nodal, Space, m) for m in Space.Measures)
-    end
-    Space = Get_space_from_IntegrationSet(Spaces, iset)
-    Solved_EFGfunctions = [EFGFunction(u_nodal, Space, m) for m in Space.Measures] #Esto sí quiero que salga como vector
-    return length(Solved_EFGfunctions) == 1 ? Solved_EFGfunctions[1] : Solved_EFGfunctions
-end
-
 function nothing_trace(obj)
     isnothing(obj) && return true
     T = typeof(obj)
@@ -309,7 +182,7 @@ function NL_Solver(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
     β = 1.0
     prev_err = Inf
     for i in 1:max_iter
-        K_tan, R_int = Sub_LinearProblem(Jac, Res, recipe, Spaces)
+     @time K_tan, R_int = Sub_LinearProblem(Jac, Res, recipe, Spaces)
         K_tot = K_tan + Ap
         R_tot = R_int + (Ap * u_nodal)-Fp
         du = K_tot \ R_tot
