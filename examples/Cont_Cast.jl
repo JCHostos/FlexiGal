@@ -1,8 +1,8 @@
 using FlexiGal
 using LinearAlgebra
 Domain = (0.16, 1.0)
-Divisions = (30, 80)
-dmax = 1.75
+Divisions = (60, 90)
+dmax = [2.0, 1.05]
 model = create_model(Domain, Divisions);
 dm = Influence_Domains(model, Domain, Divisions, dmax);
 ngpts = 3;
@@ -16,7 +16,7 @@ const cpₛ = 632.0
 const cpₗ = 806.0;
 const ρ = 7200.0;
 const Hf = 272000.0;
-const Tₗ = 1783;
+const Tₗ = 1778;
 const Tₛ = 1763;
 function fₛ(T)
     if T <= Tₛ
@@ -70,7 +70,8 @@ function Deferred_Piccard(Th, Spaces, fspace, Tspace; tol = 1e-4, max_iter = 60)
     while err > tol && iter < max_iter
         iter += 1
         fₛh = let Th = Th_old, Spaces = Spaces, fspace = fspace
-            @WeakForm aₚ(δf, f) = ∫(δf * (f * r))dΩ
+            ε=1e-6
+            @WeakForm aₚ(δf, f) = ∫(δf * (f * r) + ε*∇(δf)⋅(∇(f)*r))dΩ
             @WeakForm bₚ(δf) = ∫((δf * (fₛ ∘ Th)) * r)dΩ
             op_fs = Linear_Problem(aₚ, bₚ, fspace, Spaces)
             Solve(op_fs, dΩ)
@@ -84,13 +85,16 @@ function Deferred_Piccard(Th, Spaces, fspace, Tspace; tol = 1e-4, max_iter = 60)
         T_new = Get_Nodal_Values(Th_new)
         T_old = Get_Nodal_Values(Th_old)
         err = norm(T_new - T_old) / (norm(T_new)) 
-        println("Iteración Picard $iter: Error Relativo = $err")
+        println("Picard Iteration $iter: Relative Error = $err")
         if err>erra
         β=β/2
         T_old = T_old.*(1-β) + T_new.*β
         else
         erra=err;
         T_old = T_old.*(1-β) + T_new.*β
+        end
+        if β<0.05
+        β=1.0
         end
         Th_old = EFGFunction(T_old,Tspace_Built,Measure[1])
     end

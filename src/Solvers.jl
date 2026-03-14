@@ -195,7 +195,6 @@ function NL_Solver(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
     m = methods(NL_Op.step_builder)
     n_args = length(Base.method_argnames(last(collect(m)))) - 1
     arg_isets = Vector{IntegrationSet}(undef, n_args)
-
     for i in 1:n_args
         test_args = Any[0.0 for _ in 1:n_args]
         test_args[i] = nothing
@@ -226,7 +225,6 @@ function NL_Solver(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
         isets = [Jac.b]
         max_deg = max(max_deg, Jac.b.degree)
         if !haskey(Spaces, Jac.b)
-            println("Constructing new")
             Space = build_space(recipe, isets)
             for s in isets; Spaces[s] = Space; end
         end
@@ -236,7 +234,6 @@ function NL_Solver(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
             isets = [term.b]
             max_deg = max(max_deg, term.b.degree)
             if !haskey(Spaces, term.b)
-            println("Constructing new")
             Space = build_space(recipe, isets)
             for s in isets; Spaces[s] = Space; end
             end
@@ -246,7 +243,6 @@ function NL_Solver(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
         isets = [Res.b]
         max_deg = max(max_deg, Res.b.degree)
            if !haskey(Spaces, Res.b)
-                println("Constructing new")
                 Space = build_space(recipe, isets)
                 for s in isets
                     Spaces[s] = Space
@@ -258,7 +254,6 @@ function NL_Solver(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
             isets = [term.b]
             max_deg = max(max_deg, term.b.degree)
             if !haskey(Spaces, term.b)
-                println("Constructing new")
                 Space = build_space(recipe, isets)
                 for s in isets
                     Spaces[s] = Space

@@ -10,11 +10,8 @@ ngpts =3
 dΩ = IntegrationSet(Ω, ngpts)
 Tspace =  ApproxSpace(model, [Ω,Γ1,Γ2], Float64, dmax; Dirichlet_Boundaries=[Γ1,Γ2],Dirichlet_Values=[0.0,5.0]);
 @WeakForm a(δT, T) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
-@time op = Linear_Problem(a, Tspace)
-Th = Solve(op,dΩ) 
-Tgauss = Get_Point_Values(Th)
-∇Th = ∇(Th)
-gs=Th.Measure.gs;
+@time op = Linear_Problem(a, Tspace);
+Th = Solve(op,dΩ); 
 #=using GLMakie
     fig = Figure()
     ax = Axis3(fig[1, 1], aspect=Domain)

@@ -2,8 +2,8 @@ using FlexiGal
 Lx=5.0
 Ly=1.0
 Domain = (Lx, Ly)
-Divisions = (150, 30)
-dmax = 1.75
+Divisions = (100, 20)
+dmax = [1.75,1.75];
 const E=1000.0;
 const ν=0.3;
 const G=E/(2*(1+ν));
