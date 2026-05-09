@@ -1,5 +1,5 @@
 using SparseArrays
-function _assemble_scalar!(row, col, val, f_pure::F, Shapes::EFGMeasure{DG}, DOM, gs, coords, numqc) where {F,DG}
+function _assemble_scalar!(row, col, val, f_pure::F, Shapes::FlexiMeasure{DG}, DOM, gs, coords, numqc) where {F,DG}
     pos = 1
     ALL_PHI = Shapes.PHI
     ALL_DPHI = Shapes.DPHI
@@ -12,9 +12,9 @@ function _assemble_scalar!(row, col, val, f_pure::F, Shapes::EFGMeasure{DG}, DOM
         phi_point = ALL_PHI[ind]    # Vector{Float64}
         dphi_point = ALL_DPHI[ind]  # Vector{SVector{DG, Float64}}
         @inbounds for a in 1:nvec
-            sa = SingleEFGMeasure{DG}(phi_point[a], dphi_point[a], coord_v, ind)
+            sa = SingleFlexiMeasure{DG}(phi_point[a], dphi_point[a], coord_v, ind)
             for b in 1:nvec
-                sb = SingleEFGMeasure{DG}(phi_point[b], dphi_point[b], coord_v, ind)
+                sb = SingleFlexiMeasure{DG}(phi_point[b], dphi_point[b], coord_v, ind)
                 res_eval = f_pure(sa, sb)
                 row[pos] = dom[a]
                 col[pos] = dom[b]
@@ -25,7 +25,7 @@ function _assemble_scalar!(row, col, val, f_pure::F, Shapes::EFGMeasure{DG}, DOM
     end
 end
 
-function _assemble_vector!(row, col, val, f_pure::F, Shapes::EFGMeasure{DG}, DOM, gs, coords, numqc, D) where {F,DG}
+function _assemble_vector!(row, col, val, f_pure::F, Shapes::FlexiMeasure{DG}, DOM, gs, coords, numqc, D) where {F,DG}
     pos = 1
     ALL_PHI = Shapes.PHI
     ALL_DPHI = Shapes.DPHI
@@ -43,7 +43,7 @@ function _assemble_vector!(row, col, val, f_pure::F, Shapes::EFGMeasure{DG}, DOM
 
         @inbounds for a in 1:nvec
             # Creamos el VectorField para el nodo I (mismo phi en todas las direcciones)
-            sa = SingleEFGMeasure{DG}(phi_point[a], dphi_point[a], coord_v, ind)
+            sa = SingleFlexiMeasure{DG}(phi_point[a], dphi_point[a], coord_v, ind)
             va = if D == 2
                 VectorField{2,typeof(sa)}((sa, sa))
             else
@@ -52,7 +52,7 @@ function _assemble_vector!(row, col, val, f_pure::F, Shapes::EFGMeasure{DG}, DOM
             node_i = dom[a]
 
             @inbounds for b in 1:nvec
-                sb = SingleEFGMeasure{DG}(phi_point[b], dphi_point[b], coord_v, ind)
+                sb = SingleFlexiMeasure{DG}(phi_point[b], dphi_point[b], coord_v, ind)
                 vb = if D == 2
                     VectorField{2,typeof(sb)}((sb, sb))
                 else
@@ -78,11 +78,11 @@ function _assemble_vector!(row, col, val, f_pure::F, Shapes::EFGMeasure{DG}, DOM
     end
 end
 
-function Bilinear_Assembler(f_pure::F, Space::EFGSpace) where {F<:Function}
+function Bilinear_Assembler(f_pure::F, Space::FlexiSpace) where {F<:Function}
     D = field_dim(Space.Field_Type)
     ndofs = D * Space.nnodes
     dX = Space.Measures
-    Shapes = EFG_Measure(dX, Space)
+    Shapes = Flexi_Measure(dX, Space)
     DOM = Shapes.DOM
     dX = merge(dX)
     gs = dX.gs
@@ -102,7 +102,7 @@ function Bilinear_Assembler(f_pure::F, Space::EFGSpace) where {F<:Function}
     row = col = val = DOM = Shapes = dX = nothing
     return O
 end
-function _assemble_scalar_linear!(Qpf, f_pure::F, Shapes::EFGMeasure{DG}, DOM, gs, coords, numqc) where {F,DG}
+function _assemble_scalar_linear!(Qpf, f_pure::F, Shapes::FlexiMeasure{DG}, DOM, gs, coords, numqc) where {F,DG}
     pos = 1
     ALL_PHI = Shapes.PHI
     ALL_DPHI = Shapes.DPHI
@@ -114,14 +114,14 @@ function _assemble_scalar_linear!(Qpf, f_pure::F, Shapes::EFGMeasure{DG}, DOM, g
         c_raw = @view coords[ind, :]
         coord_v = SVector{DG,Float64}(c_raw)
         @inbounds for a in 1:length(dom)
-            aMeasure = SingleEFGMeasure{DG}(phi_point[a], dphi_point[a], coord_v, ind)
+            aMeasure = SingleFlexiMeasure{DG}(phi_point[a], dphi_point[a], coord_v, ind)
             res_eval = f_pure(aMeasure)
             Qpf[dom[a]] += res_eval * weightjac
         end
     end
 end
 
-function _assemble_vector_linear!(Qpf, f_pure::F, Shapes::EFGMeasure{DG}, DOM, gs, coords, numqc, D) where {F,DG}
+function _assemble_vector_linear!(Qpf, f_pure::F, Shapes::FlexiMeasure{DG}, DOM, gs, coords, numqc, D) where {F,DG}
     ALL_PHI = Shapes.PHI
     ALL_DPHI = Shapes.DPHI
     @inbounds for ind in 1:numqc
@@ -132,7 +132,7 @@ function _assemble_vector_linear!(Qpf, f_pure::F, Shapes::EFGMeasure{DG}, DOM, g
         phi_point = ALL_PHI[ind]
         dphi_point = ALL_DPHI[ind]
         for a in 1:length(dom)
-            sa = SingleEFGMeasure{DG}(phi_point[a], dphi_point[a], coord_v, ind)
+            sa = SingleFlexiMeasure{DG}(phi_point[a], dphi_point[a], coord_v, ind)
             va = VectorField(ntuple(i -> sa, Val(D))...)
             res_eval = f_pure(va)
             node_i = dom[a]
@@ -144,11 +144,11 @@ function _assemble_vector_linear!(Qpf, f_pure::F, Shapes::EFGMeasure{DG}, DOM, g
     end
 end
 
-function Linear_Assembler(f_pure::F, Space::EFGSpace) where {F<:Function}
+function Linear_Assembler(f_pure::F, Space::FlexiSpace) where {F<:Function}
     D = field_dim(Space.Field_Type)
     ndofs = D * Space.nnodes
     dX = Space.Measures
-    Shapes = EFG_Measure(dX, Space)
+    Shapes = Flexi_Measure(dX, Space)
     DOM = Shapes.DOM
     dX_m = merge(dX)
     gs = dX_m.gs
@@ -170,7 +170,7 @@ function Linear_Problem(Bi_op::Union{Integrated, MultiIntegrated}, Li_op::Union{
     nnodes = recipe.model.nnodes
     ndofs = D * nnodes
     max_deg = 1
-    Spaces = Dict{IntegrationSet,EFGSpace}()
+    Spaces = Dict{IntegrationSet,FlexiSpace}()
     A = spzeros(Float64, ndofs, ndofs)
     if res1 isa Integrated
         f_pure = res1.arg
@@ -235,7 +235,7 @@ function Linear_Problem(Bi_op::Union{Integrated, MultiIntegrated}, Li_op::Union{
     end
     Ap = spzeros(Float64, ndofs, ndofs)
     Fp = zeros(Float64, ndofs)
-    α = 1e6
+    α = maximum(A) * 100
     if !isempty(recipe.Dirichlet_Boundaries)
         # Aseguramos que el grado de integración sea suficiente
         dsets = [IntegrationSet(tri, max_deg) for tri in recipe.Dirichlet_Boundaries]
@@ -255,7 +255,7 @@ function Linear_Problem(Bi_op::Union{Integrated, MultiIntegrated}, Li_op::Union{
                     if D == 1; return m.phi; end
                     return SVector{D, Float64}(ntuple(i -> m[i].phi, Val(D)))
                 end
-                temp_space = EFGSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes)
+                temp_space = FlexiSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes)
                 Fp .+= Linear_Assembler(f_pure_diri, temp_space)
             end
         end
@@ -326,7 +326,8 @@ function Sub_LinearProblem(Jacobian, Residual, recipe::ApproxSpace, Spaces)
     return K, R
 end
 
-function Linear_Problem(Bi_op::Union{Integrated, MultiIntegrated}, Li_op::Union{Integrated, MultiIntegrated, Nothing}, recipe::ApproxSpace, Spaces::Dict{IntegrationSet,EFGSpace})
+function Linear_Problem(Bi_op::Union{Integrated, MultiIntegrated}, Li_op::Union{Integrated, MultiIntegrated, Nothing}, recipe::ApproxSpace, op)
+    _,_,Spaces=op;
     D = field_dim(recipe.Field_Type)
     nnodes = recipe.model.nnodes
     ndofs = D * nnodes
@@ -374,7 +375,7 @@ function Linear_Problem(Bi_op::Union{Integrated, MultiIntegrated}, Li_op::Union{
     end
     Ap = spzeros(Float64, ndofs, ndofs)
     Fp = zeros(Float64, ndofs)
-    α = 1e6
+    α = maximum(A) * 100
     if !isempty(recipe.Dirichlet_Boundaries)
         dsets = [IntegrationSet(tri, max_deg) for tri in recipe.Dirichlet_Boundaries]
         Space_D = Spaces[dsets[1]] 
@@ -387,7 +388,7 @@ function Linear_Problem(Bi_op::Union{Integrated, MultiIntegrated}, Li_op::Union{
                     if D == 1; return m.phi; end
                     return SVector{D, Float64}(ntuple(i -> m[i].phi, Val(D)))
                 end
-                temp_space = EFGSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes)
+                temp_space = FlexiSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes)
                 Fp .+= Linear_Assembler(f_pure_diri, temp_space)
             end
         end
@@ -397,4 +398,56 @@ function Linear_Problem(Bi_op::Union{Integrated, MultiIntegrated}, Li_op::Union{
     return A + Ap, F + Fp, Spaces
 end
 
-Linear_Problem(Bi_op::Union{Integrated, MultiIntegrated}, recipe::ApproxSpace, Spaces::Dict{IntegrationSet,EFGSpace}) = Linear_Problem(Bi_op, nothing, recipe, Spaces)
+Linear_Problem(Bi_op::Union{Integrated, MultiIntegrated}, recipe::ApproxSpace, Spaces::Dict{IntegrationSet,FlexiSpace}) = Linear_Problem(Bi_op, nothing, recipe, Spaces)
+
+function Reassemble_Vector!(Li_op::Union{Integrated, MultiIntegrated}, recipe::ApproxSpace, op)
+    A, _, Spaces = op
+    D = field_dim(recipe.Field_Type)
+    nnodes = recipe.model.nnodes
+    ndofs = D * nnodes
+    max_deg = 1
+    F = zeros(Float64, ndofs)
+    function extract_phi(m, dim)
+        if dim == 1
+            return m.phi
+        else
+            return SVector{dim, Float64}(ntuple(i -> m[i].phi, Val(dim)))
+        end
+    end
+    if Li_op isa Integrated
+        f_pure = (sa) -> extract_phi(Li_op.arg(sa), D)
+        iset = Li_op.b
+        max_deg = max(max_deg, iset.degree)
+        Space = Spaces[iset]
+        F .+= Linear_Assembler(f_pure, Space)     
+    elseif Li_op isa MultiIntegrated
+        for term in Li_op.terms
+            f_pure = (sa) -> extract_phi(term.arg(sa), D)
+            iset = term.b
+            max_deg = max(max_deg, iset.degree)
+            Space = Spaces[iset]
+            F .+= Linear_Assembler(f_pure, Space)
+        end
+    end
+    Fp = zeros(Float64, ndofs)
+    α = maximum(A) * 100
+    if !isempty(recipe.Dirichlet_Boundaries)
+        dsets = [IntegrationSet(tri, max_deg) for tri in recipe.Dirichlet_Boundaries]
+        Space_D = Spaces[dsets[1]] 
+        dΓd = Space_D.Measures
+        if !isempty(recipe.Dirichlet_Values)
+            for (diri, dΓc) in zip(recipe.Dirichlet_Values, dΓd)
+                f_pen = (D == 1) ? (δu -> α * diri * δu) : (δu -> δu ⋅ (diri * α))
+                f_pure_diri = (sa) -> begin
+                    m = f_pen(sa)
+                    if D == 1; return m.phi; end
+                    return SVector{D, Float64}(ntuple(i -> m[i].phi, Val(D)))
+                end
+                temp_space = FlexiSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes)
+                Fp .+= Linear_Assembler(f_pure_diri, temp_space)
+            end
+        end
+    end
+    F_final = F + Fp
+    return (A, F_final, Spaces)
+end

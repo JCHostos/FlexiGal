@@ -1,20 +1,20 @@
-function Get_space_from_IntegrationSet(Spaces::Dict{IntegrationSet,EFGSpace}, target_iset::IntegrationSet)
+function Get_space_from_IntegrationSet(Spaces::Dict{IntegrationSet,FlexiSpace}, target_iset::IntegrationSet)
     return get(Spaces, target_iset) do
         error("No se encontró espacio para el set con tag: '$(target_iset.tri.tag)'")
     end
 end
 
-Get_Measures(a::EFGSpace) = a.Measures
+Get_Measures(a::FlexiSpace) = a.Measures
 
-function extract_EFGFunction(field)
-    if field isa EFGFunction
+function extract_FlexiFunction(field)
+    if field isa FlexiFunction
         return field
     end
     if !isprimitivetype(typeof(field))
         for name in fieldnames(typeof(field))
             child = getproperty(field, name)
-            result = extract_EFGFunction(child)
-            if result isa EFGFunction
+            result = extract_FlexiFunction(child)
+            if result isa FlexiFunction
                 return result
             end
         end
@@ -26,15 +26,15 @@ function Solve(op, iset::IntegrationSet)
     u_nodal = A \ F
     Space = Get_space_from_IntegrationSet(Spaces, iset)
     M = Space.Measures isa AbstractVector ? Space.Measures[1] : Space.Measures
-    SolvedEFGfunction = EFGFunction(u_nodal, Space, M) 
-    return SolvedEFGfunction;
+    SolvedFlexifunction = FlexiFunction(u_nodal, Space, M) 
+    return SolvedFlexifunction;
 end
 
 function Solve(op)
     A, F, Spaces = op
     u_nodal = A \ F
-    EFGfunctions = Dict(s => EFGFunction(u_nodal, sp, sp.Measures[1]) for (s, sp) in Spaces)
-    return EFGfunctions;
+    Flexifunctions = Dict(s => FlexiFunction(u_nodal, sp, sp.Measures[1]) for (s, sp) in Spaces)
+    return Flexifunctions;
 end
 
 struct NonLinearOperator
@@ -85,14 +85,14 @@ function NL_Solver(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
         end
         !encontrado && error("No se detectó IntegrationSet para el argumento $i")
     end
-    Spaces = Dict{IntegrationSet, EFGSpace}()
+    Spaces = Dict{IntegrationSet, FlexiSpace}()
     isets_vec = unique(arg_isets)
     for s in isets_vec
         Spaces[s] = build_space(recipe, [s])
         max_deg = max(max_deg, s.degree)
     end
-    EFGfunctions = Dict(s => EFGFunction(u_nodal, sp, sp.Measures[1]) for (s, sp) in Spaces)
-    uhs = [EFGfunctions[s] for s in isets_vec] 
+    Flexifunctions = Dict(s => FlexiFunction(u_nodal, sp, sp.Measures[1]) for (s, sp) in Spaces)
+    uhs = [Flexifunctions[s] for s in isets_vec] 
     Jac, Res = NL_Op.step_builder(uhs...)
     if Jac isa Integrated
         isets = [Jac.b]
@@ -167,7 +167,7 @@ function NL_Solver(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
                         return SVector{3,Float64}(m[1].phi, m[2].phi, m[3].phi)
                     end
                 end
-                Fp .+= Linear_Assembler(f_pure, EFGSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes))
+                Fp .+= Linear_Assembler(f_pure, FlexiSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes))
             end
         end
         op_arg =
@@ -182,7 +182,7 @@ function NL_Solver(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
     β = 1.0
     prev_err = Inf
     for i in 1:max_iter
-     @time K_tan, R_int = Sub_LinearProblem(Jac, Res, recipe, Spaces)
+        @time K_tan, R_int = Sub_LinearProblem(Jac, Res, recipe, Spaces)
         K_tot = K_tan + Ap
         R_tot = R_int + (Ap * u_nodal)-Fp
         du = K_tot \ R_tot
@@ -201,5 +201,5 @@ function NL_Solver(NL_Op; u_seed=nothing, tol=1e-6, max_iter=15)
         end
     Jac, Res = NL_Op.step_builder(uhs...)
     end
-    return EFGfunctions 
+    return Flexifunctions 
 end

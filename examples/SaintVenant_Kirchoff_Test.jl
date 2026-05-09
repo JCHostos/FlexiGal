@@ -2,8 +2,8 @@ using FlexiGal
 Lx=5.0
 Ly=1.0
 Domain = (Lx, Ly)
-Divisions = (200, 40)
-dmax = [1.75,1.75];
+Divisions = (90, 40)
+dmax = [1.5,1.5];
 const E=1000.0;
 const ν=0.3;
 const G=E/(2*(1+ν));
@@ -20,7 +20,7 @@ dΩ = IntegrationSet(Ω, ngpts)
 dΓ2 = IntegrationSet(Γ2, ngpts) 
 const u₀(x)=VectorField(-P*(2+ν)*x[2]/(6*E*I₀)*(x[2]^2-Ly^2/4), P*ν*Lx/(2*E*I₀)*x[2]^2)
 #const u₀=VectorField(0.0, 0.0)
-Uspace = ApproxSpace(model, [Ω, Γ1, Γ2], VectorField{2,Float64}, dmax; Dirichlet_Boundaries=[Γ1],Dirichlet_Values=[u₀])
+Uspace = ApproxSpace(model, [Ω, Γ1, Γ2], VectorField{2,Float64}; dmax, method=:EFG, technique=:MK, shape=:rectangular, Dirichlet_Boundaries=[Γ1],Dirichlet_Values=[u₀])
 const s(x)=VectorField(0.0,P/(2*I₀)*(Ly^2/4 - x[2]^2))
 const g=VectorField(0.0,-0.6)
 

@@ -1,8 +1,8 @@
 using FlexiGal
 using LinearAlgebra
 Domain = (0.16, 1.0)
-Divisions = (60, 90)
-dmax = [2.0, 1.05]
+Divisions = (36, 180)
+dmax = [2.0, 1.15]
 model = create_model(Domain, Divisions);
 dm = Influence_Domains(model, Domain, Divisions, dmax);
 ngpts = 3;
@@ -43,66 +43,68 @@ function hₛ(x)
 end
 Ω = Triangulation(model, "Domain");
 Γb = Triangulation(model, "Bottom");
-Γr = Triangulation(model, "Right");
+Γᵣ = Triangulation(model, "Right");
 dΩ = IntegrationSet(Ω, ngpts);
-dΓr = IntegrationSet(Γr, ngpts);
-Tspace = ApproxSpace(model, [Ω, Γb, Γr], Float64, dmax;
+dΓᵣ = IntegrationSet(Γᵣ, ngpts);
+Tspace = ApproxSpace(model, [Ω, Γb, Γᵣ], Float64; dmax, method=:EFG, technique =:MK,
     Dirichlet_Boundaries=[Γb], Dirichlet_Values=[Tc]);
-fspace = ApproxSpace(model, [Ω, Γb, Γr], Float64, dmax);
+fspace = ApproxSpace(model, [Ω, Γb, Γᵣ], Float64; dmax, method =:EFG,technique =:MK);
 const v = VectorField(0.0, vc)
 r(x) = x[1]
-@WeakForm a(δT, T) = ∫(∇(δT) ⋅ (kₛ * ∇(T) * r) + δT * (ρ * cpₛ * v ⋅ ∇(T) * r))dΩ + ∫(δT * (hₛ * T * r))dΓr
-@WeakForm b(δT) = ∫((-δT * q₀) * r)dΓr + ∫((δT * hₛ * Tw) * r)dΓr
+@WeakForm a(δT, T) = ∫(∇(δT) ⋅ (kₛ * ∇(T) * r) + δT * (ρ * cpₛ * v ⋅ ∇(T) * r))dΩ + ∫(δT * (hₛ * T * r))dΓᵣ
+@WeakForm b(δT) = ∫((-δT * q₀) * r)dΓᵣ + ∫((δT * hₛ * Tw) * r)dΓᵣ
 op = Linear_Problem(a, b, Tspace);
 Th = Solve(op, dΩ);
-_, _, Spaces = op;
-function Deferred_Piccard(Th, Spaces, fspace, Tspace; tol = 1e-4, max_iter = 60)
-    Tspace_Built = Get_space_from_IntegrationSet(Spaces,dΩ)
+function Deferred_Piccard(Th, op, fspace, Tspace; tol=1e-6, max_iter=60)
+    _,_,Spaces=op
+    Tspace_Built = Get_space_from_IntegrationSet(Spaces, dΩ)
     Measure = Get_Measures(Tspace_Built)
     Th_old = Th
     Th_new = Th
     iter = 0
     err = 1.0
-    erra = 1.0;
+    erra = 1.0
     k_nl(T) = fₛ(T) * kₛ + (1 - fₛ(T)) * kₗ
     cp_nl(T) = fₛ(T) * cpₛ + (1 - fₛ(T)) * cpₗ
-    β=1.0
+    β = 1.0
+    ε = 1e-9
+    @WeakForm aₚ(δf, f) = ∫(δf * (f * r) + ε * ∇(δf) ⋅ (∇(f) * r))dΩ
+    @WeakForm bₚ(δf) = ∫((δf * (fₛ ∘ Th)) * r)dΩ
+    op_fs = Linear_Problem(aₚ, bₚ, fspace, op)
     while err > tol && iter < max_iter
         iter += 1
-        fₛh = let Th = Th_old, Spaces = Spaces, fspace = fspace
-            ε=1e-6
-            @WeakForm aₚ(δf, f) = ∫(δf * (f * r) + ε*∇(δf)⋅(∇(f)*r))dΩ
-            @WeakForm bₚ(δf) = ∫((δf * (fₛ ∘ Th)) * r)dΩ
-            op_fs = Linear_Problem(aₚ, bₚ, fspace, Spaces)
-            Solve(op_fs, dΩ)
+        fₛh = let Th = Th_old, fspace = fspace, op_fs=op_fs
+        @WeakForm bₚ(δf) = ∫((δf * (fₛ ∘ Th)) * r)dΩ
+        op_fs = Reassemble_Vector!(bₚ,fspace,op_fs)
+        Solve(op_fs, dΩ)
         end
-        Th_new = let Th_old = Th_old, fₛh = fₛh, Spaces = Spaces, Tspace = Tspace
-            @WeakForm a_picard(δT, T) = ∫(∇(δT) ⋅ (k_nl∘Th_old *∇(T) * r) + δT * ρ * (cp_nl ∘ Th_old) * ((v ⋅ ∇(T)) * r))dΩ + ∫(δT * (hₛ * T * r))dΓr
-            @WeakForm b_picard(δT) = ∫((-δT * q₀) * r)dΓr + ∫((δT * hₛ * Tw) * r)dΓr + ∫((δT * ρ * Hf * v ⋅ ∇(fₛh)) * r)dΩ
-            @time op_nl = Linear_Problem(a_picard, b_picard, Tspace, Spaces)
+        Th_new = let Th_old = Th_old, fₛh = fₛh, Tspace = Tspace, op=op
+            @WeakForm a_picard(δT, T) = ∫(∇(δT) ⋅ (k_nl ∘ Th_old * ∇(T) * r) + δT * ρ * (cp_nl ∘ Th_old) * ((v ⋅ ∇(T)) * r))dΩ + ∫(δT * (hₛ * T * r))dΓᵣ
+            @WeakForm b_picard(δT) = ∫((-δT * q₀) * r)dΓᵣ + ∫((δT * hₛ * Tw) * r)dΓᵣ + ∫((δT * ρ * Hf * v ⋅ ∇(fₛh)) * r)dΩ
+            @time op_nl = Linear_Problem(a_picard, b_picard, Tspace, op)
             Solve(op_nl, dΩ)
         end
         T_new = Get_Nodal_Values(Th_new)
         T_old = Get_Nodal_Values(Th_old)
-        err = norm(T_new - T_old) / (norm(T_new)) 
+        err = norm(T_new - T_old) / (norm(T_new))
         println("Picard Iteration $iter: Relative Error = $err")
-        if err>erra
-        β=β/2
-        T_old = T_old.*(1-β) + T_new.*β
+        if err > erra
+            β = β / 2
+            T_old = T_old .* (1 - β) + T_new .* β
         else
-        erra=err;
-        T_old = T_old.*(1-β) + T_new.*β
+            erra = err
+            T_old = T_old .* (1 - β) + T_new .* β
         end
-        if β<0.05
-        β=1.0
+        if β < 0.05
+            β = 1.0
         end
-        Th_old = EFGFunction(T_old,Tspace_Built,Measure[1])
+        Th_old = FlexiFunction(T_old, Tspace_Built, Measure[1])
     end
     if err <= tol
         println("--- Converged in $iter iterations ---")
     else
         println("--- Warning: There was not convergence (Error: $err) ---")
-    end 
+    end
     return Th_new
 end
-Th2 = Deferred_Piccard(Th, Spaces, fspace, Tspace; max_iter = 80);
+Th2 = Deferred_Piccard(Th, op, fspace, Tspace; max_iter=100, tol=1e-5);

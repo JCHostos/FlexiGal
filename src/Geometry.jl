@@ -2,10 +2,11 @@ include("Meshing.jl")
 # ------------------------------
 # Structs for model
 # ------------------------------
-struct EFGmodel{D}
+struct model{D}
     domain::NTuple{D, Float64}    # Nuevo
     divisions::NTuple{D, Int}     # Nuevo
     x::Matrix{Float64}
+    x0::Matrix{Float64}
     conn::Matrix{Int}
     entities::Dict{Symbol,Dict{String,Union{Int,Matrix{Int}}}}
     dim::Int
@@ -261,23 +262,20 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}; map::
     bottomfront_edges = nothing
     toptback_edges = nothing
     topfront_edges = nothing
+    x0 = copy(x)
     if map !== identity
         @inbounds for i in 1:nnodes
-            # Extraemos la fila como una tupla o pequeño vector para el mapa
-            new_coords = map(x[i, :])
+            new_coords = map(@view x[i, :])
             @simd for d in 1:D
                 x[i, d] = new_coords[d]
             end
         end
     end
     GC.gc()
-    # ------------------------------
-    # Return model
-    # ------------------------------
-    return EFGmodel{D}(domain,divisions,x,conn,entities,D,ncells,nnodes)
+    return model{D}(domain,divisions,x,x0,conn,entities,D,ncells,nnodes)
 end
 
-function get_entity(model::EFGmodel, tag::String)
+function get_entity(model::model{D}, tag::String) where D
     for ent_type in keys(model.entities)
         subdict = get(model.entities, ent_type, Dict{String,Union{Int,Matrix{Int}}}())
         if haskey(subdict, tag)
@@ -285,4 +283,46 @@ function get_entity(model::EFGmodel, tag::String)
         end
     end
     error("Tag '$tag' at any entity of the model.")
+end
+
+function get_entity_info(model::model{D}, tag::String) where D
+    prioridad = (D == 2) ? [:faces, :ext_edges, :int_edges] : [:volumes, :ext_faces, :int_faces, :ext_edges]
+    for cat in prioridad
+        if haskey(model.entities, cat) && haskey(model.entities[cat], tag)
+            return model.entities[cat][tag], cat
+        end
+    end
+    for (cat, subdict) in model.entities
+        if haskey(subdict, tag)
+            return subdict[tag], cat
+        end
+    end
+    error("Tag '$tag' no encontrado.")
+end
+
+function set_tag!(model::model{D}, region::Function; name::String="NewTag") where D
+    category = (D == 2) ? :faces : :volumes
+    if !haskey(model.entities, category)
+        model.entities[category] = Dict{String, Union{Int, Matrix{Int}}}()
+    end
+    ncells = size(model.conn, 1)
+    nodes_per_cell = size(model.conn, 2)
+    selected_indices = Int[]
+    for e in 1:ncells
+        node_indices = model.conn[e, :]
+        centroid = zeros(D)
+        for idx in node_indices
+            centroid .+= @view model.x[idx, :]
+        end
+        centroid ./= nodes_per_cell
+        if region(centroid)
+            push!(selected_indices, e)
+        end
+    end
+    if isempty(selected_indices)
+        @warn "La búsqueda geométrica para '$name' no encontró elementos. Revisa la condición."
+        return
+    end
+    model.entities[category][name] = model.conn[selected_indices, :] 
+    println("✅ Tag '$name' creado en :$category con $(length(selected_indices)) elementos.")
 end

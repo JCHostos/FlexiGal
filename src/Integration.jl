@@ -1,7 +1,6 @@
 function pgauss(k::Int)
     if k == 1
-        v = [0.0;
-            2.0]
+        v = reshape([0.0, 2.0], 2, 1)
     elseif k == 2
         v = [-1/sqrt(3) 1/sqrt(3);
             1.0 1.0]
@@ -146,7 +145,7 @@ function Measure3D_Cell(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Floa
     return xg, Jac
 end
 
-function egauss(xc::Array{Float64,2}, conn::Array{Int,2}, gauss::Array{Float64,2})
+function egauss(xc::Array{Float64,2}, conn::Array{Int,2}, gauss::AbstractMatrix{Float64})
     dim = size(xc, 2)                 
     l = size(gauss, 2)                
     npts = l^dim                     
@@ -216,4 +215,171 @@ function egauss_bound(xc::Array{Float64,2}, conn::Array{Int,2}, gauss::Array{Flo
     end
 
     return gs
+end
+
+function fem_shape_line2(xi)
+    phi = [0.5 * (1 - xi), 0.5 * (1 + xi)]
+    dphi_l = [-0.5  0.5]
+    return phi, dphi_l
+end
+
+# 2D: Para volumen en 2D o fronteras en 3D (Quad de 4 nodos)
+function fem_shape_quad4(xi, eta)
+    phi = [
+        0.25 * (1 - xi) * (1 - eta),
+        0.25 * (1 + xi) * (1 - eta),
+        0.25 * (1 + xi) * (1 + eta),
+        0.25 * (1 - xi) * (1 + eta)
+    ]
+    dphi_l = [
+        -0.25*(1-eta)  0.25*(1-eta) 0.25*(1+eta) -0.25*(1+eta);
+        -0.25*(1-xi)  -0.25*(1+xi)  0.25*(1+xi)  0.25*(1-xi)
+    ]
+    return phi, dphi_l
+end
+
+# 3D: Para volumen en 3D (Hexaedro de 8 nodos)
+function fem_shape_hex8(xi, eta, zeta)
+    phi = [
+        (1/8)*(1-xi)*(1-eta)*(1-zeta), (1/8)*(1+xi)*(1-eta)*(1-zeta),
+        (1/8)*(1+xi)*(1+eta)*(1-zeta), (1/8)*(1-xi)*(1+eta)*(1-zeta),
+        (1/8)*(1-xi)*(1-eta)*(1+zeta), (1/8)*(1+xi)*(1-eta)*(1+zeta),
+        (1/8)*(1+xi)*(1+eta)*(1+zeta), (1/8)*(1-xi)*(1+eta)*(1+zeta)
+    ]
+    dphi_l = zeros(3, 8)
+    dphi_l[1,:] = [-(1/8)*(1-eta)*(1-zeta), (1/8)*(1-eta)*(1-zeta), (1/8)*(1+eta)*(1-zeta), -(1/8)*(1+eta)*(1-zeta), 
+                   -(1/8)*(1-eta)*(1+zeta), (1/8)*(1-eta)*(1+zeta), (1/8)*(1+eta)*(1+zeta), -(1/8)*(1+eta)*(1+zeta)]
+    dphi_l[2,:] = [-(1/8)*(1-xi)*(1-zeta), -(1/8)*(1+xi)*(1-zeta), (1/8)*(1+xi)*(1-zeta), (1/8)*(1-xi)*(1-zeta), 
+                   -(1/8)*(1-xi)*(1+zeta), -(1/8)*(1+xi)*(1+zeta), (1/8)*(1+xi)*(1+zeta), (1/8)*(1-xi)*(1+zeta)]
+    # d/dzeta
+    dphi_l[3,:] = [-(1/8)*(1-xi)*(1-eta), -(1/8)*(1+xi)*(1-eta), -(1/8)*(1+xi)*(1+eta), -(1/8)*(1-xi)*(1+eta), 
+                    (1/8)*(1-xi)*(1-eta),  (1/8)*(1+xi)*(1-eta),  (1/8)*(1+xi)*(1+eta),  (1/8)*(1-xi)*(1+eta)]
+    return phi, dphi_l
+end
+
+# ==============================================================================
+# INTEGRACIÓN DE VOLUMEN (DOMINIO)
+# ==============================================================================
+
+function egauss_fem(xc::Matrix{Float64}, conn::Matrix{Int}, gauss_rule::Matrix{Float64})
+    dim = size(xc, 2)
+    l = size(gauss_rule, 2)
+    npts_cell = l^dim
+    numcell = size(conn, 1)
+    numv_by_cell= size(conn,2)
+    total_gauss = numcell * npts_cell
+    # Estructuras idénticas a IMLS
+    gs = zeros(total_gauss, dim + 2)
+    PHI  = Vector{Vector{Float64}}(undef, total_gauss)
+    DPHI = Vector{Vector{SVector{dim, Float64}}}(undef, total_gauss)
+    DOM  = Vector{Vector{Int}}(undef, total_gauss)
+    xe_all = Coords_by_Ele(xc, conn)
+    idx = 1
+    if dim == 2
+        @inbounds for e in 1:numcell
+            xe = @view xe_all[e, :, :]
+            for j in 1:l, i in 1:l
+                xi, eta = gauss_rule[1, i], gauss_rule[1, j]
+                w = gauss_rule[2, i] * gauss_rule[2, j]
+                
+                phi, dphi_l = fem_shape_quad4(xi, eta)
+                xg = SVector{2}(sum(phi[k] * xe[k, 1] for k in 1:numv_by_cell), sum(phi[k] * xe[k, 2] for k in 1:numv_by_cell))
+                J = @SMatrix [
+                    sum(dphi_l[1, k] * xe[k, 1] for k in 1:numv_by_cell)  sum(dphi_l[1, k] * xe[k, 2] for k in 1:numv_by_cell);
+                    sum(dphi_l[2, k] * xe[k, 1] for k in 1:numv_by_cell)  sum(dphi_l[2, k] * xe[k, 2] for k in 1:numv_by_cell)
+                ]
+                detJ = det(J)
+                invJT = inv(J)'
+                gs[idx, 1:2] .= xg; gs[idx, 3] = w; gs[idx, 4] = detJ
+                PHI[idx] = phi
+                DPHI[idx] = [invJT * SVector{2}(dphi_l[1, k], dphi_l[2, k]) for k in 1:numv_by_cell]
+                DOM[idx] = conn[e, :]
+                idx += 1
+            end
+        end
+    elseif dim == 3
+        @inbounds for e in 1:numcell
+            xe = @view xe_all[e, :, :]
+            for k in 1:l, j in 1:l, i in 1:l
+                xi, eta, zeta = gauss_rule[1, i], gauss_rule[1, j], gauss_rule[1, k]
+                w = gauss_rule[2, i] * gauss_rule[2, j] * gauss_rule[2, k]
+                phi, dphi_l = fem_shape_hex8(xi, eta, zeta)
+                xg = SVector{3}(sum(phi[m] * xe[m, 1] for m in 1:numv_by_cell), sum(phi[m] * xe[m, 2] for m in 1:numv_by_cell), sum(phi[m] * xe[m, 3] for m in 1:numv_by_cell))
+                J = @SMatrix [
+                    sum(dphi_l[1,m]*xe[m,1] for m=1:numv_by_cell) sum(dphi_l[1,m]*xe[m,2] for m=1:numv_by_cell) sum(dphi_l[1,m]*xe[m,3] for m=1:numv_by_cell);
+                    sum(dphi_l[2,m]*xe[m,1] for m=1:numv_by_cell) sum(dphi_l[2,m]*xe[m,2] for m=1:numv_by_cell) sum(dphi_l[2,m]*xe[m,3] for m=1:numv_by_cell);
+                    sum(dphi_l[3,m]*xe[m,1] for m=1:numv_by_cell) sum(dphi_l[3,m]*xe[m,2] for m=1:numv_by_cell) sum(dphi_l[3,m]*xe[m,3] for m=1:numv_by_cell)
+                ]
+                detJ = det(J)
+                invJT = inv(J)'
+                gs[idx, 1:3] .= xg; gs[idx, 4] = w; gs[idx, 5] = detJ
+                PHI[idx] = phi
+                DPHI[idx] = [invJT * SVector{3}(dphi_l[1, m], dphi_l[2, m], dphi_l[3, m]) for m in 1:numv_by_cell]
+                DOM[idx] = conn[e, :]
+                idx += 1
+            end
+        end
+    end
+    return gs, PHI, DPHI, DOM
+end
+
+function egauss_bound_fem(xc::Matrix{Float64}, conn::Matrix{Int}, gauss_rule::Matrix{Float64})
+    dim = size(xc, 2)
+    l = size(gauss_rule, 2)
+    npts_bound = l^(dim-1)
+    numcell = size(conn, 1)
+    total_gauss = numcell * npts_bound
+    gs = zeros(total_gauss, dim + 2)
+    PHI  = Vector{Vector{Float64}}(undef, total_gauss)
+    DPHI = Vector{Vector{SVector{dim, Float64}}}(undef, total_gauss)
+    DOM  = Vector{Vector{Int}}(undef, total_gauss)
+    xe_all = Coords_by_Ele(xc, conn)
+    numv_by_cell= size(conn,2)
+    idx = 1
+    if dim == 2
+       @inbounds for e in 1:numcell
+            xe = @view xe_all[e, :, :]
+            for i in 1:l
+                xi = gauss_rule[1, i]; w = gauss_rule[2, i]
+                phi, dphi_l = fem_shape_line2(xi)
+                xg = SVector{2}(sum(phi[k] * xe[k, 1] for k in 1:numv_by_cell), sum(phi[k] * xe[k, 2] for k in 1:numv_by_cell))
+                tx = sum(dphi_l[1, k] * xe[k, 1] for k in 1:2)
+                ty = sum(dphi_l[1, k] * xe[k, 2] for k in 1:2)
+                ds = sqrt(tx^2 + ty^2)
+                gs[idx, 1:2] .= xg; gs[idx, 3] = w; gs[idx, 4] = ds
+                PHI[idx] = phi
+                DPHI[idx] = [SVector{2}(dphi_l[1,k]*tx / ds^2, dphi_l[1,k]*ty / ds^2) for k in 1:numv_by_cell]
+                DOM[idx] = conn[e, :]
+                idx += 1
+            end
+        end
+    elseif dim == 3
+        @inbounds for e in 1:numcell
+            xe = @view xe_all[e, :, :]
+            for j in 1:l, i in 1:l
+                xi, eta = gauss_rule[1, i], gauss_rule[1, j]
+                w = gauss_rule[2, i] * gauss_rule[2, j]
+                phi, dphi_l = fem_shape_quad4(xi, eta)
+                xg = SVector{3}(sum(phi[k]*xe[k,1] for k=1:numv_by_cell), sum(phi[k]*xe[k,2] for k=1:numv_by_cell), sum(phi[k]*xe[k,3] for k=1:numv_by_cell))
+                t1 = SVector{3}(sum(dphi_l[1,k]*xe[k,1] for k=1:numv_by_cell), sum(dphi_l[1,k]*xe[k,2] for k=1:numv_by_cell), sum(dphi_l[1,k]*xe[k,3] for k=1:numv_by_cell))
+                t2 = SVector{3}(sum(dphi_l[2,k]*xe[k,1] for k=1:numv_by_cell), sum(dphi_l[2,k]*xe[k,2] for k=1:numv_by_cell), sum(dphi_l[2,k]*xe[k,3] for k=1:numv_by_cell))
+                g11, g12, g22 = dot(t1,t1), dot(t1,t2), dot(t2,t2)
+                detG = g11*g22 - g12^2
+                dA = sqrt(detG)
+                invG = @SMatrix [g22/detG -g12/detG; -g12/detG g11/detG]
+                gs[idx, 1:3] .= xg; gs[idx, 4] = w; gs[idx, 5] = dA
+                PHI[idx] = phi
+                DPHI_e = Vector{SVector{3, Float64}}(undef, numv_by_cell)
+                for k in 1:numv_by_cell
+                    dphi_loc = SVector{2}(dphi_l[1,k], dphi_l[2,k])
+                    coeffs = invG * dphi_loc
+                    DPHI_e[k] = coeffs[1]*t1 + coeffs[2]*t2
+                end
+                DPHI[idx] = DPHI_e
+                DOM[idx] = conn[e, :]
+                idx += 1
+            end
+        end
+    end
+    return gs, PHI, DPHI, DOM
 end
