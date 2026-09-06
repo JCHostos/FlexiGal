@@ -8,7 +8,7 @@ include("WeakForm_Macro.jl")
 export create_model, BackgroundIntegration, Flexi_Space, Influence_Domains, FlexiFunction, ApproxSpace, Solve, build_space,
     Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, ⊙, Bilinear_Assembler, Linear_Assembler, VectorField, Linear_Problem, plot_field,
     Triangulation, IntegrationSet, Get_space_from_IntegrationSet, tr, Id, NL_Solver, @WeakForm, @NL_WeakForm, NonLinearOperator, Get_Nodal_Values, Get_Measures,
-    Reassemble_Vector!, set_tag!
+    Reassemble_Vector!, set_tag!, MultiApproxSpace, extract_FlexiFunction, set_boundary_tag!, EFGInterpolatedField, Get_Interpolated_Values
 struct Triangulation
     model::model
     tag::String
@@ -24,20 +24,52 @@ struct DomainMeasure
     degree::Int
 end
 
-function BackgroundIntegration(iset::IntegrationSet, method::Symbol)
+function BackgroundIntegration(iset::IntegrationSet, method::Symbol; order=1)
     model = iset.tri.model
     tag = iset.tri.tag
     degree = iset.degree
     dim = model.dim
     conn, cat = get_entity_info(model, tag)
-    gauss = pgauss(degree)
+    numvxcell = size(conn, 2)
     domain_cat = (dim == 2) ? :faces : :volumes
     is_boundary = (cat !== domain_cat)
+    if !is_boundary
+        if dim == 2
+            if numvxcell == 3
+                gauss = ptriangle(degree)
+            elseif numvxcell == 4
+                gauss = pgauss(degree)
+            else
+                error("Elemento de dominio 2D no soportado con $numvxcell nodos")
+            end
+        elseif dim == 3
+            if numvxcell == 4
+                gauss = ptetra(degree)
+            elseif numvxcell == 8
+                gauss = pgauss(degree)
+            else
+                error("Elemento de dominio 3D no soportado con $numvxcell nodos")
+            end
+        end
+    else
+        if dim == 2
+            @assert numvxcell == 2 "Las celdas de frontera en 2D deben tener 2 nodos"
+            gauss = pgauss(degree) 
+        elseif dim == 3
+            if numvxcell == 3
+                gauss = ptriangle(degree)
+            elseif numvxcell == 4
+                gauss = pgauss(degree)
+            else
+                error("Celdas de frontera en 3D no soportadas con $numvxcell nodos")
+            end
+        end
+    end
     if method === :FEM
         if !is_boundary
-            gs, PHI, DPHI, DOM = egauss_fem(model.x, conn, gauss)
+            gs, PHI, DPHI, DOM = egauss_fem(model.x, conn, gauss; order=order)
         else
-            gs, PHI, DPHI, DOM = egauss_bound_fem(model.x, conn, gauss)
+            gs, PHI, DPHI, DOM = egauss_bound_fem(model.x, conn, gauss; order=order)
         end
         return DomainMeasure(tag, gs, degree), PHI, DPHI, DOM
     elseif method === :EFG
@@ -46,7 +78,7 @@ function BackgroundIntegration(iset::IntegrationSet, method::Symbol)
         else
             gs = egauss_bound(model.x, conn, gauss)
         end
-        return DomainMeasure(tag, gs, degree)
+        return DomainMeasure(tag, gs, degree)     
     else
         error("Método desconocido: $method")
     end
@@ -69,15 +101,19 @@ struct ApproxSpace{DV}
     technique::Symbol
     methods::Dict{String,Symbol}
     dm_map::Union{Function,Nothing}
+    gamma::Float64
     Dirichlet_Boundaries::Vector{Triangulation}
     Dirichlet_Values::Vector{DV}
+    constraint::Symbol
+    order::Int
+    cell_based::Bool
 end
 
 # El constructor que usaremos en tu script
-function ApproxSpace(model, triangs, Field_Type; dmax=1.5, shape::Symbol=:rectangular, technique=:IMLS,
+function ApproxSpace(model, triangs, Field_Type; dmax=1.5, shape::Symbol=:rectangular, technique=:IMLS, gamma=5.0,
     method=:EFG, dm_map=nothing,
     Dirichlet_Boundaries=Triangulation[],
-    Dirichlet_Values=Float64[])
+    Dirichlet_Values=Float64[],constraint=:none, order=1, cell_based = false)
     T = triangs isa Triangulation ? [triangs] : triangs
     DT = Dirichlet_Boundaries isa Triangulation ? [Dirichlet_Boundaries] : Dirichlet_Boundaries
     DV = eltype(Dirichlet_Values)
@@ -100,10 +136,9 @@ function ApproxSpace(model, triangs, Field_Type; dmax=1.5, shape::Symbol=:rectan
             methods_dict[dt.tag] = default_m
         end
     end
-    return ApproxSpace{DV}(model, T, Field_Type, dmax, shape, technique, methods_dict,dm_map, DT, Dirichlet_Values)
+    return ApproxSpace{DV}(model, T, Field_Type, dmax, shape, technique, methods_dict,dm_map, gamma, DT, Dirichlet_Values, constraint, order, cell_based)
 end
 
-# Constructing Shape Functions given model, Measures for Integration and Influence domains
 struct FlexiSpace{DG}
     domain::Dict{String,Tuple{
         Vector{Vector{Float64}},
@@ -120,45 +155,159 @@ struct FlexiSpace{DG}
     nnodes::Int
 end
 
-function Flexi_Space(model::model{DG}, gs_list::Vector{DomainMeasure}, Field_Type::Type, dm::Union{Matrix{Float64},Vector{Float64}}; shape::Symbol=:rectangular, technique::Symbol=:IMLS) where DG
+function Influence_Domains_CellBased(model, dmax::Real; shape::Symbol=:rectangular, dm_map=nothing)
     x = model.x
-    T_Shape = Tuple{Vector{Vector{Float64}},Vector{Vector{SVector{DG,Float64}}},Vector{Vector{Int}}}
-    results_domain = Dict{String,T_Shape}()
-    results_boundary = Dict{String,T_Shape}()
-    nnodes, dim = size(x)
-    for measure in gs_list
-        tag = measure.tag
-        gs = measure.gs
-        conn = get_entity(model, tag)
-        gs_type = size(conn, 2) == 2^dim ? :domain : :boundary
-        PHI, DPHI, DOM = SHAPE_FUN(gs, x, dm; shape=shape, technique=technique)
-        if gs_type === :domain
-            results_domain[tag] = (PHI, DPHI, DOM)
-        else
-            results_boundary[tag] = (PHI, DPHI, DOM)
-        end
-    end
-    return FlexiSpace{DG}(results_domain, results_boundary, Field_Type, gs_list, nnodes)
-end
+    conn = model.conn
+    nnodes = size(x, 1)
+    ncells = size(conn, 1)
+    nvxcell = size(conn, 2)
+    dim = size(x, 2)
 
-function Flexi_Space(model::model{DG}, gs_list::Vector{DomainMeasure}, Field_Type::Type, results::Vector) where DG
-    x = model.x
-    T_Shape = Tuple{Vector{Vector{Float64}},Vector{Vector{SVector{DG,Float64}}},Vector{Vector{Int}}}
-    results_domain = Dict{String,T_Shape}()
-    results_boundary = Dict{String,T_Shape}()
-    nnodes, dim = size(x)
-    for res in results
-        measure, PHI, DPHI, DOM = res
-        tag = measure.tag
-        conn = get_entity(model, tag)
-        gs_type = size(conn, 2) == 2^dim ? :domain : :boundary
-        if gs_type === :domain
-            results_domain[tag] = (PHI, DPHI, DOM)
-        else
-            results_boundary[tag] = (PHI, DPHI, DOM)
+    nodal_measure = zeros(Float64, nnodes)
+    nodal_count = zeros(Int, nnodes)
+
+    # --- Precálculo de derivadas locales para celdas de 4 y 8 nodos ---
+    if nvxcell == 4 && dim == 2
+        # Cuadriláteros 2D: la evaluación en (0,0) es EXACTA para el área de cualquier cuadrilátero distorsionado
+        dNloc_quad = 0.25 * [-1.0  1.0  1.0 -1.0;
+                             -1.0 -1.0  1.0  1.0]
+
+    elseif nvxcell == 8 && dim == 3
+        # Hexaedros 3D: Integración de Gauss 2x2x2 para volumen EXACTO en celdas distorsionadas
+        gp_val = 1.0 / sqrt(3.0)
+        gp_coords = (-gp_val, gp_val)
+
+        # Coordenadas locales de los 8 nodos de un hexaedro canónico [-1, 1]^3
+        xi_n   = (-1.0,  1.0,  1.0, -1.0, -1.0,  1.0,  1.0, -1.0)
+        eta_n  = (-1.0, -1.0,  1.0,  1.0, -1.0, -1.0,  1.0,  1.0)
+        zeta_n = (-1.0, -1.0, -1.0, -1.0,  1.0,  1.0,  1.0,  1.0)
+
+        dNloc_hex = zeros(Float64, 3, 8, 8) # (dirección, nodo, punto_gauss)
+        gp_idx = 1
+        for gz in gp_coords, gy in gp_coords, gx in gp_coords
+            for k in 1:8
+                dNloc_hex[1, k, gp_idx] = 0.125 * xi_n[k]   * (1.0 + eta_n[k]*gy)  * (1.0 + zeta_n[k]*gz)
+                dNloc_hex[2, k, gp_idx] = 0.125 * eta_n[k]  * (1.0 + xi_n[k]*gx)   * (1.0 + zeta_n[k]*gz)
+                dNloc_hex[3, k, gp_idx] = 0.125 * zeta_n[k] * (1.0 + xi_n[k]*gx)   * (1.0 + eta_n[k]*gy)
+            end
+            gp_idx += 1
         end
     end
-    return FlexiSpace{DG}(results_domain, results_boundary, Field_Type, gs_list, nnodes)
+
+    @inbounds for e in 1:ncells
+        c_meas = 0.0
+        scale_factor = 1.0
+
+        if nvxcell == 3 && dim == 2
+            # 1) TRIÁNGULOS (2D)
+            n1, n2, n3 = conn[e, 1], conn[e, 2], conn[e, 3]
+            x1, y1 = x[n1, 1], x[n1, 2]
+            x2, y2 = x[n2, 1], x[n2, 2]
+            x3, y3 = x[n3, 1], x[n3, 2]
+
+            # Área exacta del triángulo
+            c_meas = 0.5 * abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1))
+            # Triángulo equilátero: A = (√3/4)*a² => a² = (4/√3)*A
+            scale_factor = 4.0 / sqrt(3.0)
+
+        elseif nvxcell == 4 && dim == 2
+            # 2) CUADRILÁTEROS (2D)
+            J11, J12, J21, J22 = 0.0, 0.0, 0.0, 0.0
+            for k in 1:4
+                nid = conn[e, k]
+                xk, yk = x[nid, 1], x[nid, 2]
+                J11 += dNloc_quad[1, k] * xk
+                J12 += dNloc_quad[1, k] * yk
+                J21 += dNloc_quad[2, k] * xk
+                J22 += dNloc_quad[2, k] * yk
+            end
+            c_meas = 4.0 * abs(J11 * J22 - J12 * J21)
+            scale_factor = 1.0
+
+        elseif nvxcell == 4 && dim == 3
+            # 3) TETRAEDROS (3D)
+            n1, n2, n3, n4 = conn[e, 1], conn[e, 2], conn[e, 3], conn[e, 4]
+            x1, y1, z1 = x[n1, 1], x[n1, 2], x[n1, 3]
+            x2, y2, z2 = x[n2, 1], x[n2, 2], x[n2, 3]
+            x3, y3, z3 = x[n3, 1], x[n3, 2], x[n3, 3]
+            x4, y4, z4 = x[n4, 1], x[n4, 2], x[n4, 3]
+
+            x21, y21, z21 = x2 - x1, y2 - y1, z2 - z1
+            x31, y31, z31 = x3 - x1, y3 - y1, z3 - z1
+            x41, y41, z41 = x4 - x1, y4 - y1, z4 - z1
+
+            # Volumen exacto del tetraedro
+            c_meas = (1.0 / 6.0) * abs(
+                x21 * (y31 * z41 - z31 * y41) -
+                y21 * (x31 * z41 - z31 * x41) +
+                z21 * (x31 * y41 - y31 * x41)
+            )
+            # Tetraedro regular: V = (√2/12)*a³ => a³ = 6*√2*V ≈ 8.48528*V
+            scale_factor = 6.0 * sqrt(2.0)
+
+        elseif nvxcell == 8 && dim == 3
+            # 4) HEXAEDROS (3D) - Gauss 2x2x2 para celdas distorsionadas
+            c_meas = 0.0
+            for gp in 1:8
+                J11, J12, J13 = 0.0, 0.0, 0.0
+                J21, J22, J23 = 0.0, 0.0, 0.0
+                J31, J32, J33 = 0.0, 0.0, 0.0
+                for k in 1:8
+                    nid = conn[e, k]
+                    xk, yk, zk = x[nid, 1], x[nid, 2], x[nid, 3]
+                    dNx = dNloc_hex[1, k, gp]
+                    dNy = dNloc_hex[2, k, gp]
+                    dNz = dNloc_hex[3, k, gp]
+                    J11 += dNx * xk; J12 += dNx * yk; J13 += dNx * zk
+                    J21 += dNy * xk; J22 += dNy * yk; J23 += dNy * zk
+                    J31 += dNz * xk; J32 += dNz * yk; J33 += dNz * zk
+                end
+                detJ = J11 * (J22 * J33 - J23 * J32) - J12 * (J21 * J33 - J23 * J31) + J13 * (J21 * J32 - J22 * J31)
+                c_meas += abs(detJ)
+            end
+            scale_factor = 1.0
+        end
+
+        for k in 1:nvxcell
+            nid = conn[e, k]
+            nodal_measure[nid] += (c_meas * scale_factor)
+            nodal_count[nid] += 1
+        end
+    end
+
+    if shape === :rectangular
+        dm = zeros(Float64, nnodes, dim)
+        @inbounds for i in 1:nnodes
+            avg_meas = nodal_measure[i] / nodal_count[i]
+            h_local = (dim == 2) ? sqrt(avg_meas) : cbrt(avg_meas)
+            dm[i, :] .= dmax * h_local
+        end
+
+        if dm_map !== nothing
+            @inbounds for i in 1:nnodes
+                scale = dm_map(@view model.x0[i, :])
+                if isa(scale, AbstractVector) || isa(scale, Tuple)
+                    for d in 1:dim
+                        dm[i, d] *= scale[d]
+                    end
+                else
+                    dm[i, :] .*= scale
+                end
+            end
+        end
+        return dm
+
+    elseif shape === :circular || shape === :spherical
+        dm_vec = zeros(Float64, nnodes)
+        @inbounds for i in 1:nnodes
+            avg_meas = nodal_measure[i] / nodal_count[i]
+            h_local = (dim == 2) ? sqrt(avg_meas) : cbrt(avg_meas)
+            dm_vec[i] = dmax * h_local
+        end
+        return dm_vec
+    else
+        error("Forma de dominio de influencia no soportada: $shape. Formas soportadas: :rectangular, :circular, :spherical.")
+    end
 end
 
 function Influence_Domains(model::model{DG}, Domain::Tuple, Divisions::Tuple, dmax::Union{Real,AbstractVector{<:Real}}; shape::Symbol=:rectangular, dm_map::Union{Function,Nothing}=nothing) where DG
@@ -223,10 +372,18 @@ function Flexi_Measure(measures::Union{DomainMeasure,AbstractVector{<:DomainMeas
     return FlexiMeasure{DG}(all_PHI, all_DPHI, all_DOM, Shape_Functions.nnodes)
 end
 
+function get_topology_layout(conn::Matrix{Int}, dim::Int)
+    nvxcell = size(conn, 2)
+    # Triángulos (3) y Tetraedros (4 en 3D) -> :linear
+    # Cuadriláteros (4 en 2D) y Hexaedros (8 en 3D) -> :multilinear
+    return (nvxcell == 3 || (nvxcell == 4 && dim == 3)) ? :linear : :multilinear
+end
+
 function build_space(recipe::ApproxSpace, isets::Vector{IntegrationSet})
-    m = recipe.model
+    m = recipe.model::model
     dim = size(m.x, 2)
     DG = dim
+    Layout = get_topology_layout(m.conn,dim)
     T_Shape = Tuple{Vector{Vector{Float64}},Vector{Vector{SVector{DG,Float64}}},Vector{Vector{Int}}}
     results_domain = Dict{String,T_Shape}()
     results_boundary = Dict{String,T_Shape}()
@@ -234,8 +391,17 @@ function build_space(recipe::ApproxSpace, isets::Vector{IntegrationSet})
     shape = recipe.shape
     technique = recipe.technique
     dm_map = recipe.dm_map
+    gamma = recipe.gamma
     needs_efg = any(get(recipe.methods, iset.tri.tag, :EFG) === :EFG for iset in isets)
-    dm = needs_efg ? Influence_Domains(m, m.domain, m.divisions, recipe.dmax; shape=shape, dm_map=dm_map) : Matrix{Float64}(undef, 0, 0)
+    if needs_efg
+        if recipe.cell_based
+            dm = Influence_Domains_CellBased(m, recipe.dmax; shape=shape, dm_map=dm_map)
+        else
+            dm = Influence_Domains(m, m.domain, m.divisions, recipe.dmax; shape=shape, dm_map=dm_map)
+        end
+    else
+        dm = Matrix{Float64}(undef, 0, 0)
+    end
     for iset in isets
         tag = iset.tri.tag
         method = get(recipe.methods, tag, :EFG)
@@ -243,15 +409,15 @@ function build_space(recipe::ApproxSpace, isets::Vector{IntegrationSet})
         domain_cat = (dim == 2) ? :faces : :volumes
         gs_type = (cat === domain_cat) ? :domain : :boundary
         if method === :FEM
-            meas, PHI, DPHI, DOM = BackgroundIntegration(iset, :FEM)
+            meas, PHI, DPHI, DOM = BackgroundIntegration(iset, :FEM; order=recipe.order)
         else
             meas = BackgroundIntegration(iset, :EFG)
             if gs_type === :domain
                 global_node_ids = sort!(unique(view(conn, :)))
-                PHI, DPHI, DOM_local = SHAPE_FUN(meas.gs, m.x[global_node_ids,:], dm[global_node_ids,:]; shape=shape, technique=technique)
+                PHI, DPHI, DOM_local = SHAPE_FUN(meas.gs, m.x[global_node_ids,:], dm[global_node_ids,:]; shape=shape, technique=technique, Layout=Layout, gamma=gamma)
                 DOM = [global_node_ids[idx] for idx in DOM_local]
             else
-                PHI, DPHI, DOM = SHAPE_FUN(meas.gs, m.x, dm; shape=shape, technique=technique)
+                PHI, DPHI, DOM = SHAPE_FUN(meas.gs, m.x, dm; shape=shape, technique=technique, Layout=Layout, gamma=gamma)
             end
         end
         push!(gs_list, meas)
@@ -259,6 +425,48 @@ function build_space(recipe::ApproxSpace, isets::Vector{IntegrationSet})
         target_dict[tag] = (PHI, DPHI, DOM)
     end
     return FlexiSpace{DG}(results_domain, results_boundary, recipe.Field_Type, gs_list, m.nnodes)
+end
+
+struct MultiApproxSpace
+    spaces::Vector{ApproxSpace}
+    offsets::Vector{Int}
+    ndofs::Int
+    function MultiApproxSpace(spaces::Vector{<:ApproxSpace}) # Usamos <: para permitir diferentes DV
+        offsets = Int[]
+        current_offset = 0
+        for i in 1:length(spaces)
+            push!(offsets, current_offset)
+            d = field_dim(spaces[i].Field_Type)
+            if spaces[i].order == 0
+            n_elements = spaces[i].model.ncells
+            current_offset += n_elements * d
+            else
+            current_offset += spaces[i].model.nnodes * d
+            end
+        end
+        return new(convert(Vector{ApproxSpace}, spaces), offsets, current_offset)
+    end
+end
+
+MultiApproxSpace(args...) = MultiApproxSpace([args...])
+
+function global_dofs(mspace::MultiApproxSpace, field_idx::Int, local_nodes::Vector{Int})
+    space = mspace.spaces[field_idx]
+    offset = mspace.offsets[field_idx]
+    d = field_dim(space.Field_Type)
+    if d == 1
+        return local_nodes .+ offset
+    else
+        total_dofs = length(local_nodes) * d
+        indices = Vector{Int}(undef, total_dofs)
+        for (i, node) in enumerate(local_nodes)
+            base = offset + (node - 1) * d
+            for j in 1:d
+                indices[(i-1)*d + j] = base + j
+            end
+        end
+        return indices
+    end
 end
 
 include("Fields_Operations.jl")

@@ -1,52 +1,75 @@
+
 function plot_field(model, field; title="Resultado FlexiGal", Deformation_Field=nothing, scale=1.0, invert_y=false)
     if !isdefined(Main, :GLMakie)
         @eval Main using GLMakie
     end
     
-    # 1. Normalización de entrada
+    # --- Función auxiliar interna para convertir Vector{SVector} a Matrix{Float64} ---
+    function _to_matrix(vec_vals)
+        N = length(vec_vals)
+        N == 0 && return Matrix{Float64}(undef, 0, 0)
+        d = length(vec_vals[1])
+        M = Matrix{Float64}(undef, N, d)
+        @inbounds for i in 1:N, j in 1:d
+            M[i, j] = vec_vals[i][j]
+        end
+        return M
+    end
+
+    # 1. Normalización de campos de entrada
     fields = field isa AbstractVector ? field : [field]
     
-    # Inicializamos con el tipo del primer elemento para no perder la inferencia
-    f1 = extract_FlexiFunction(fields[1])
-    d_geo = size(f1.Measure.gs, 2) - 2
-    
-    # Contenedores con tipos explícitos
-    all_coords = Matrix{Float64}(undef, 0, d_geo)
-    all_values = [] # Lo dejaremos como Any pero cambiaremos cómo detectamos T
-    
-    # 2. Recolección
-    for f in fields
-        fun = extract_FlexiFunction(f)
-        gs = fun.Measure.gs 
-        coords_f = gs[:, 1:d_geo]
-        
-        all_coords = vcat(all_coords, coords_f)
-        append!(all_values, Get_Point_Values(f))
+    # Manejo abreviado: si Deformation_Field = true, usamos el propio 'field'
+    def_fields = if Deformation_Field === true
+        fields
+    elseif isnothing(Deformation_Field)
+        nothing
+    elseif Deformation_Field isa AbstractVector
+        Deformation_Field
+    else
+        [Deformation_Field]
     end
 
-    # --- EL ARREGLO CLAVE ---
-    # Detectamos el tipo del contenido real, no del contenedor
+    # Determinamos la dimensión geométrica d_geo
+    coords_1 = get_field_coordinates(fields[1], model)
+    d_geo = size(coords_1, 2)
+    
+    # Contenedores globales
+    all_coords = Matrix{Float64}(undef, 0, d_geo)
+    all_deformed_coords = Matrix{Float64}(undef, 0, d_geo)
+    all_values = []
+    
+    # 2. Recolección sincronizada por subdominio
+    for (idx, f) in enumerate(fields)
+        coords_f = get_field_coordinates(f, model)
+        vals_f = Get_Point_Values(f)
+        
+        if !isnothing(def_fields)
+            # Asignamos el campo de deformación correspondiente al subdominio
+            df = (length(def_fields) >= idx) ? def_fields[idx] : def_fields[1]
+            u_f = Get_Point_Values(df)
+            u_mat = _to_matrix(u_f)
+            
+            @assert size(coords_f, 1) == size(u_mat, 1) "Mismatched dimensions: Subdomain $idx coordinates ($(size(coords_f, 1))) do not match deformation field points ($(size(u_mat, 1)))."
+            
+            def_coords_f = coords_f .+ scale .* u_mat
+            all_deformed_coords = vcat(all_deformed_coords, def_coords_f)
+        end
+
+        all_coords = vcat(all_coords, coords_f)
+        append!(all_values, vals_f)
+    end
+
+    # Selección de los puntos finales a graficar
+    points_to_plot = isnothing(def_fields) ? all_coords : all_deformed_coords
+
+    # 3. Clasificación de datos
     sample_val = all_values[1]
     T = typeof(sample_val)
-    
-    # 3. Deformación
-    points_to_plot = if isnothing(Deformation_Field)
-        all_coords
-    else
-        def_fields = Deformation_Field isa AbstractVector ? Deformation_Field : [Deformation_Field]
-        all_u = []
-        for df in def_fields
-            append!(all_u, Get_Point_Values(df))
-        end
-        # Convertimos a matriz estándar para evitar problemas de Adjoint en Makie
-        pos = [all_coords[i, :] + scale * all_u[i] for i in 1:length(all_u)]
-        reduce(hcat, pos)' |> collect 
-    end
-
-    # 4. Clasificación de datos (Igual, pero usando el T corregido)
     plot_list = []
+    
     if T <: Real
-        push!(plot_list, (Float64.(all_values), "Escalar")) # Forzamos Float64 por si acaso
+        push!(plot_list, (Float64.(all_values), "Escalar"))
     elseif T <: AbstractVector
         D = length(sample_val)
         for i in 1:D; push!(plot_list, (getindex.(all_values, i), "Comp. $i")); end
@@ -59,7 +82,7 @@ function plot_field(model, field; title="Resultado FlexiGal", Deformation_Field=
         push!(plot_list, (norm.(all_values), "Norma"))
     end
 
-    # 5. Graficación
+    # 4. Renderizado con GLMakie
     def_plot = () -> begin
         if isempty(plot_list)
             error("No se encontraron datos para graficar. Revisa el tipo de field.")
@@ -73,7 +96,6 @@ function plot_field(model, field; title="Resultado FlexiGal", Deformation_Field=
         for (idx, (data, label)) in enumerate(plot_list)
             r = ceil(Int, idx / cols); c = mod1(idx, cols)
             
-            # Decidimos si usar Axis o Axis3
             if d_geo == 3
                 ax = Main.Axis3(n == 1 ? fig[1, 1] : fig[r, c][1, 1], title = label, aspect = :data)
                 plt = Main.scatter!(ax, points_to_plot[:, 1], points_to_plot[:, 2], points_to_plot[:, 3]; 

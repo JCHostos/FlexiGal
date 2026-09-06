@@ -8,10 +8,21 @@ const E=1000.0;
 const ν=0.3;
 const G=E/(2*(1+ν));
 const λ=E*ν/((1+ν)*(1-2*ν));
-shift(x)=[x[1], x[2]-Ly/2];
+function clustering(x)
+    eps_val = 1.0
+    nx = x[1]
+    ny = Ly/2 * tanh((2.0*x[2]-Ly)*eps_val)/tanh(eps_val)
+    return [nx, ny]
+end
+function dm_clustered(x0)
+    eps_val=1.0
+    s1 = 1.0
+    s2 = eps_val / (tanh(eps_val) * cosh((2.0*x0[2]-1.0)*eps_val)^2)
+    return [s1, s2]
+end
 const P=-1.2
 I₀=Ly^3/12
-model = create_model(Domain, Divisions; map=shift)
+model = create_model(Domain, Divisions; map=clustering)
 ngpts = 3
 Ω = Triangulation(model, "Domain")
 Γ1 = Triangulation(model, "Left")
@@ -20,7 +31,7 @@ dΩ = IntegrationSet(Ω, ngpts)
 dΓ2 = IntegrationSet(Γ2, ngpts) 
 const u₀(x)=VectorField(-P*(2+ν)*x[2]/(6*E*I₀)*(x[2]^2-Ly^2/4), P*ν*Lx/(2*E*I₀)*x[2]^2)
 #const u₀=VectorField(0.0, 0.0)
-Uspace = ApproxSpace(model, [Ω, Γ1, Γ2], VectorField{2,Float64}; dmax, method=:EFG, technique=:MK, shape=:rectangular, Dirichlet_Boundaries=[Γ1],Dirichlet_Values=[u₀])
+Uspace = ApproxSpace(model, [Ω, Γ1, Γ2], VectorField{2,Float64}; dmax, dm_map=dm_clustered, method=:EFG, technique=:MK, shape=:rectangular, Dirichlet_Boundaries=[Γ1],Dirichlet_Values=[u₀])
 const s(x)=VectorField(0.0,P/(2*I₀)*(Ly^2/4 - x[2]^2))
 const g=VectorField(0.0,-0.6)
 

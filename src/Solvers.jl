@@ -21,6 +21,25 @@ function extract_FlexiFunction(field)
     end
     return nothing
 end
+
+function get_field_coordinates(f, model=nothing)
+    fun = extract_FlexiFunction(f)
+    if fun !== nothing
+        gs = fun.Measure.gs 
+        d_geo = size(gs, 2) - 2
+        return gs[:, 1:d_geo]
+    end
+    if hasfield(typeof(f), :targets)
+        return f.targets
+    elseif hasfield(typeof(f), :source) && hasfield(typeof(f.source), :targets)
+        return f.source.targets
+    elseif !isnothing(model) && hasproperty(model, :x)
+        return model.x
+    else
+        error("No se pudieron extraer las coordenadas del campo $(typeof(f))")
+    end
+end
+
 function Solve(op, iset::IntegrationSet)
     A, F, Spaces = op
     u_nodal = A \ F
@@ -35,6 +54,35 @@ function Solve(op)
     u_nodal = A \ F
     Flexifunctions = Dict(s => FlexiFunction(u_nodal, sp, sp.Measures[1]) for (s, sp) in Spaces)
     return Flexifunctions;
+end
+
+function Solve(op::Tuple{SparseMatrixCSC, Vector{Float64}, Dict, MultiApproxSpace}, iset::IntegrationSet)
+    A, F, Cache, MS = op
+    u_global = A \ F
+    field_results = []
+    for i in 1:length(MS.spaces)
+        recipe = MS.spaces[i]
+        off = MS.offsets[i]
+        D = field_dim(recipe.Field_Type)
+        ndofs_field = (recipe.order == 0) ? (recipe.model.ncells * D) : (recipe.model.nnodes * D)
+        u_field = u_global[off+1 : off + ndofs_field]
+        sp = Cache[(i, iset)]
+        ph = FlexiFunction(u_field, sp, sp.Measures[1])
+        if recipe.constraint == :ZeroMean
+            if D == 1
+                int_p = ∫(ph)iset
+                m = sp.Measures[1]
+                vol = sum(@view(m.gs[:, end-1]) .* @view(m.gs[:, end]))
+                p_avg = int_p / vol
+                u_field .-= p_avg
+                ph = FlexiFunction(u_field, sp, sp.Measures[1])
+            else
+                @warn "Constraint :ZeroMean ignored for vector field (D=$D). Only applied to scalar fields."
+            end
+        end 
+        push!(field_results, ph)
+    end 
+    return length(field_results) == 1 ? field_results[1] : tuple(field_results...)
 end
 
 struct NonLinearOperator

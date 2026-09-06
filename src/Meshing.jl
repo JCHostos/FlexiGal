@@ -1,11 +1,8 @@
 function generate_cartesian_mesh(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}) where D
     @assert D == 2 || D == 3 "Only 2D and 3D meshes are supported"
-
     nnodes = prod(d + 1 for d in divisions)
     ncells = prod(divisions)
-
     x = zeros(Float64, nnodes, D)
-
     if D == 2
         Nx, Ny = divisions
         Lx, Ly = domain
@@ -55,7 +52,6 @@ function generate_cartesian_mesh(domain::NTuple{D,Float64}, divisions::NTuple{D,
             end
         end
     end
-
     return x, conn, ncells, nnodes
 end
 
@@ -63,14 +59,13 @@ function Coords_by_Ele(x::Matrix{Float64}, conn::Matrix{Int})
     nele, nnodxele = size(conn)
     dim = size(x, 2)                           # 2 para 2D, 3 para 3D…
     xe = zeros(Float64, nele, nnodxele, dim)   # (elemento, nodo por elemento, coordenada)
-
     for i in 1:nnodxele
         c = conn[:, i]                         # índices de los nodos para la i-ésima posición
         xe[:, i, :] = x[c, :]                   # copiar las coordenadas correspondientes
     end
-
     return xe
 end
+
 function matching_cols(A, B)
     ext = size(A, 1)
     int = size(B, 1)
@@ -127,12 +122,10 @@ function FindEdgesQuad(conn::Matrix{Int})
         all[row, :] = conn[e, 3:4];   row += 1
         all[row, :] = conn[e, [4,1]]; row += 1
     end
-
     all_sorted = sort(all, dims=2)
     m = unique(all_sorted, dims=1)
     index = matching_cols_dict(m, all_sorted)
     connedges = all[index, :]
-
     mask = trues(size(all,1))
     mask[index] .= false
     connintedges = all[mask, :]
@@ -140,7 +133,30 @@ function FindEdgesQuad(conn::Matrix{Int})
     m_int = unique(connintedges_sorted, dims=1)
     index_int = matching_cols_dict(m_int, connintedges_sorted)
     connintedges = connintedges[index_int, :]
-    # Aristas externas
+    connextedges = conn_external(connedges, connintedges)
+    return connintedges, connextedges
+end
+
+function FindEdgesTri(conn::Matrix{Int})
+    nelems, _ = size(conn)
+    all = Array{Int,2}(undef, nelems*3, 2)
+    row = 1
+    @inbounds for e in 1:nelems
+        all[row, :] = conn[e, 1:2];   row += 1
+        all[row, :] = conn[e, 2:3];   row += 1
+        all[row, :] = conn[e, [3,1]]; row += 1
+    end
+    all_sorted = sort(all, dims=2)
+    m = unique(all_sorted, dims=1)
+    index = matching_cols_dict(m, all_sorted)
+    connedges = all[index, :]
+    mask = trues(size(all,1))
+    mask[index] .= false
+    connintedges = all[mask, :]
+    connintedges_sorted = sort(connintedges, dims=2)
+    m_int = unique(connintedges_sorted, dims=1)
+    index_int = matching_cols_dict(m_int, connintedges_sorted)
+    connintedges = connintedges[index_int, :]
     connextedges = conn_external(connedges, connintedges)
     return connintedges, connextedges
 end
@@ -157,12 +173,10 @@ function FindFacesandEdgesHexa(conn::Matrix{Int})
         all[row, :] = conn[e, [1,2,3,4]];   row += 1
         all[row, :] = conn[e, [5,6,7,8]];   row += 1
     end
-
     all_sorted = sort(all, dims=2)
     m = unique(all_sorted, dims=1)
     index = matching_cols_dict(m, all_sorted)
     connfaces = all[index, :]
-
     mask = trues(size(all,1))
     mask[index] .= false
     connintfaces = all[mask, :]
@@ -170,7 +184,6 @@ function FindFacesandEdgesHexa(conn::Matrix{Int})
     m_int = unique(connintfaces_sorted, dims=1)
     index_int = matching_cols_dict(m_int, connintfaces_sorted)
     connintfaces = connintfaces[index_int, :]
-
     connextfaces = conn_external(connfaces, connintfaces)
     nfaces = size(connintfaces, 1)
     all = Array{Int,2}(undef, nfaces*4, 2)
@@ -181,7 +194,6 @@ function FindFacesandEdgesHexa(conn::Matrix{Int})
         all[row, :] = connintfaces[e, [3,4]];   row += 1
         all[row, :] = connintfaces[e, [4,1]];   row += 1
     end
-
     all_sorted = sort(all, dims=2)
     m = unique(all_sorted, dims=1)
     index = matching_cols_dict(m, all_sorted)
@@ -202,11 +214,67 @@ function FindFacesandEdgesHexa(conn::Matrix{Int})
         all[row, :] = connfaces[e, [3,4]];   row += 1
         all[row, :] = connfaces[e, [4,1]];   row += 1
     end
-
     all_sorted = sort(all, dims=2)
     m = unique(all_sorted, dims=1)
     index = matching_cols_dict(m, all_sorted)
     connedges = all[index, :]
     connextedges = conn_external(connedges, connintedges)
+    return connintfaces, connextfaces, connintedges, connextedges
+end
+
+function FindFacesandEdgesTetra(conn::Matrix{Int})
+    nelems, _ = size(conn)
+    all = Array{Int,2}(undef, nelems*4, 3)
+    row = 1
+    @inbounds for e in 1:nelems
+        all[row, :] = conn[e, [1,2,3]];   row += 1
+        all[row, :] = conn[e, [1,2,4]];   row += 1
+        all[row, :] = conn[e, [1,3,4]];   row += 1
+        all[row, :] = conn[e, [2,3,4]];   row += 1
+    end
+    all_sorted = sort(all, dims=2)
+    m = unique(all_sorted, dims=1)
+    index = matching_cols_dict(m, all_sorted)
+    connfaces = all[index, :]
+    mask = trues(size(all,1))
+    mask[index] .= false
+    connintfaces = all[mask, :]
+    connintfaces_sorted = sort(connintfaces, dims=2)
+    m_int = unique(connintfaces_sorted, dims=1)
+    index_int = matching_cols_dict(m_int, connintfaces_sorted)
+    connintfaces = connintfaces[index_int, :]
+    connextfaces = conn_external(connfaces, connintfaces)
+    nfaces = size(connintfaces, 1)
+    all_e = Array{Int,2}(undef, nfaces*3, 2)
+    row = 1
+    @inbounds for e in 1:nfaces
+        all_e[row, :] = connintfaces[e, [1,2]];   row += 1
+        all_e[row, :] = connintfaces[e, [2,3]];   row += 1
+        all_e[row, :] = connintfaces[e, [3,1]];   row += 1
+    end
+    all_e_sorted = sort(all_e, dims=2)
+    m_e = unique(all_e_sorted, dims=1)
+    index_e = matching_cols_dict(m_e, all_e_sorted)
+    connedges = all_e[index_e, :]
+    mask_e = trues(size(all_e,1))
+    mask_e[index_e] .= false
+    connintedges = all_e[mask_e, :]
+    connintedges_sorted = sort(connintedges, dims=2)
+    m_int_e = unique(connintedges_sorted, dims=1)
+    index_int_e = matching_cols_dict(m_int_e, connintedges_sorted)
+    connintedges = connintedges[index_int_e, :]
+    nfaces = size(connfaces, 1)
+    all_e2 = Array{Int,2}(undef, nfaces*3, 2)
+    row = 1
+    @inbounds for e in 1:nfaces
+        all_e2[row, :] = connfaces[e, [1,2]];   row += 1
+        all_e2[row, :] = connfaces[e, [2,3]];   row += 1
+        all_e2[row, :] = connfaces[e, [3,1]];   row += 1
+    end
+    all_e2_sorted = sort(all_e2, dims=2)
+    m_e2 = unique(all_e2_sorted, dims=1)
+    index_e2 = matching_cols_dict(m_e2, all_e2_sorted)
+    connedges = all_e2[index_e2, :]
+    connextedges = conn_external(connedges, connintedges) 
     return connintfaces, connextfaces, connintedges, connextedges
 end

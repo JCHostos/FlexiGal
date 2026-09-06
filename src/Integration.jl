@@ -22,43 +22,134 @@ function pgauss(k::Int)
     return v
 end
 
-function Measure2D_Cell(xi::Float64, eta::Float64, xe::Array{Float64,3})
+function ptriangle(k::Int)
+    if k == 1
+        # 1 punto (exacto para polinomios lineales)
+        v = reshape([1 / 3; 1 / 3; 0.5], 3, 1)
+    elseif k == 3
+        # 3 puntos (exacto para polinomios cuadráticos)
+        v = [1/6 2/3 1/6;
+            1/6 1/6 2/3;
+            1/6 1/6 1/6]
+    elseif k == 4
+        # 4 puntos (exacto para polinomios cúbicos)
+        v = [1/3 2/15 11/15 2/15;
+            1/3 2/15 2/15 11/15;
+            -9/32 25/96 25/96 25/96]
+    else
+        error("Cuadratura de Triángulo implementada solo para k = 1, 3 o 4 puntos")
+    end
+    return v
+end
+
+function ptetra(k::Int)
+    if k == 1
+        v = reshape([1 / 4; 1 / 4; 1 / 4; 1 / 6], 4, 1)
+    elseif k == 4
+        a = (5.0 + 3.0 * sqrt(5.0)) / 20.0
+        b = (5.0 - sqrt(5.0)) / 20.0
+        v = [a b b b;
+            b a b b;
+            b b a b;
+            1/24 1/24 1/24 1/24]
+    elseif k == 5
+        v = [1/4 1/2 1/6 1/6 1/6;
+            1/4 1/6 1/2 1/6 1/6;
+            1/4 1/6 1/6 1/2 1/6;
+            -2/15 3/40 3/40 3/40 3/40]
+    else
+        error("Cuadratura de Tetraedro implementada solo para k = 1, 4 o 5 puntos")
+    end
+    return v
+end
+
+function Measure2D_Tri(xi::Float64, eta::Float64, xe::Array{Float64,3})
     numcell, numvxcell, dim = size(xe)
-    @assert numvxcell == 4 "Elemento cuadrilátero de 4 nodos esperado"
-
-    phi = [
-        0.25 * (1 - xi) * (1 - eta),
-        0.25 * (1 + xi) * (1 - eta),
-        0.25 * (1 + xi) * (1 + eta),
-        0.25 * (1 - xi) * (1 + eta)
-    ]
-
-    dphidxi = [
-        -0.25 * (1 - eta),
-        0.25 * (1 - eta),
-        0.25 * (1 + eta),
-        -0.25 * (1 + eta)
-    ]
-
-    dphideta = [
-        -0.25 * (1 - xi),
-        -0.25 * (1 + xi),
-        0.25 * (1 + xi),
-        0.25 * (1 - xi)
-    ]
-
+    @assert numvxcell == 3 "Elemento triángulo de 3 nodos esperado"
+    phi = [1.0 - xi - eta, xi, eta]
+    dphidxi = [-1.0, 1.0, 0.0]
+    dphideta = [-1.0, 0.0, 1.0]
     xg = zeros(numcell, dim)
     dxgxi = zeros(numcell, dim)
     dxgeta = zeros(numcell, dim)
-
-    for i in 1:dim 
+    for i in 1:dim
         for k in 1:numvxcell
             xg[:, i] .+= phi[k] .* xe[:, k, i]
             dxgxi[:, i] .+= dphidxi[k] .* xe[:, k, i]
             dxgeta[:, i] .+= dphideta[k] .* xe[:, k, i]
         end
     end
+    Jac = if dim == 2
+        dxgxi[:, 1] .* dxgeta[:, 2] .- dxgxi[:, 2] .* dxgeta[:, 1]
+    elseif dim == 3
+        Sx = dxgxi[:, 2] .* dxgeta[:, 3] .- dxgeta[:, 2] .* dxgxi[:, 3]
+        Sy = dxgeta[:, 1] .* dxgxi[:, 3] .- dxgxi[:, 1] .* dxgeta[:, 3]
+        Sz = dxgxi[:, 1] .* dxgeta[:, 2] .- dxgeta[:, 1] .* dxgxi[:, 2]
+        sqrt.(Sx .^ 2 .+ Sy .^ 2 .+ Sz .^ 2)
+    else
+        error("dim must be 2 o 3")
+    end
+    return xg, Jac, phi
+end
 
+function Measure3D_Tetra(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Float64,3})
+    numcell, numvxcell, dim = size(xe)
+    @assert dim == 3 "Esta función es sólo para celdas 3D"
+    @assert numvxcell == 4 "Elemento tetraedro de 4 nodos esperado"
+    phi = [1.0 - xi - eta - zeta, xi, eta, zeta]
+    dphidxi = [-1.0, 1.0, 0.0, 0.0]
+    dphideta = [-1.0, 0.0, 1.0, 0.0]
+    dphidzeta = [-1.0, 0.0, 0.0, 1.0]
+    dphiloc = vcat(dphidxi', dphideta', dphidzeta')
+    J = zeros(numcell, dim, dim)
+    xg = zeros(numcell, dim)
+    for i in 1:dim
+        for j in 1:dim
+            for k in 1:numvxcell
+                J[:, i, j] .+= dphiloc[j, k] .* xe[:, k, i]
+                if j == 1   # sólo una vez por nodo para XYG
+                    xg[:, i] .+= phi[k] .* xe[:, k, i]
+                end
+            end
+        end
+    end
+    Jac = @. J[:, 1, 1] * (J[:, 2, 2] * J[:, 3, 3] - J[:, 3, 2] * J[:, 2, 3]) -
+             J[:, 1, 2] * (J[:, 2, 1] * J[:, 3, 3] - J[:, 3, 1] * J[:, 2, 2]) +
+             J[:, 1, 3] * (J[:, 2, 1] * J[:, 3, 2] - J[:, 3, 1] * J[:, 2, 2])
+    return xg, Jac
+end
+
+function Measure2D_Cell(xi::Float64, eta::Float64, xe::Array{Float64,3})
+    numcell, numvxcell, dim = size(xe)
+    @assert numvxcell == 4 "Elemento cuadrilátero de 4 nodos esperado"
+    phi = [
+        0.25 * (1 - xi) * (1 - eta),
+        0.25 * (1 + xi) * (1 - eta),
+        0.25 * (1 + xi) * (1 + eta),
+        0.25 * (1 - xi) * (1 + eta)
+    ]
+    dphidxi = [
+        -0.25 * (1 - eta),
+        0.25 * (1 - eta),
+        0.25 * (1 + eta),
+        -0.25 * (1 + eta)
+    ]
+    dphideta = [
+        -0.25 * (1 - xi),
+        -0.25 * (1 + xi),
+        0.25 * (1 + xi),
+        0.25 * (1 - xi)
+    ]
+    xg = zeros(numcell, dim)
+    dxgxi = zeros(numcell, dim)
+    dxgeta = zeros(numcell, dim)
+    for i in 1:dim
+        for k in 1:numvxcell
+            xg[:, i] .+= phi[k] .* xe[:, k, i]
+            dxgxi[:, i] .+= dphidxi[k] .* xe[:, k, i]
+            dxgeta[:, i] .+= dphideta[k] .* xe[:, k, i]
+        end
+    end
     Jac = if dim == 2
         dxgxi[:, 1] .* dxgeta[:, 2] .- dxgxi[:, 2] .* dxgeta[:, 1]
     elseif dim == 3
@@ -76,7 +167,6 @@ end
 function Measure3D_Cell(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Float64,3})
     numcell, numvxcell, dim = size(xe)
     @assert dim == 3 "Esta función es sólo para celdas 3D"
-
     phi = [
         (1 / 8) * (1 - xi) * (1 - eta) * (1 - zeta),
         (1 / 8) * (1 + xi) * (1 - eta) * (1 - zeta),
@@ -87,7 +177,6 @@ function Measure3D_Cell(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Floa
         (1 / 8) * (1 + xi) * (1 + eta) * (1 + zeta),
         (1 / 8) * (1 - xi) * (1 + eta) * (1 + zeta)
     ]
-
     dphidxi = [
         -(1 / 8) * (1 - eta) * (1 - zeta),
         (1 / 8) * (1 - eta) * (1 - zeta),
@@ -98,7 +187,6 @@ function Measure3D_Cell(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Floa
         (1 / 8) * (1 + eta) * (1 + zeta),
         -(1 / 8) * (1 + eta) * (1 + zeta)
     ]
-
     dphideta = [
         -(1 / 8) * (1 - xi) * (1 - zeta),
         -(1 / 8) * (1 + xi) * (1 - zeta),
@@ -109,7 +197,6 @@ function Measure3D_Cell(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Floa
         (1 / 8) * (1 + xi) * (1 + zeta),
         (1 / 8) * (1 - xi) * (1 + zeta)
     ]
-
     dphidzeta = [
         -(1 / 8) * (1 - xi) * (1 - eta),
         -(1 / 8) * (1 + xi) * (1 - eta),
@@ -120,15 +207,11 @@ function Measure3D_Cell(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Floa
         (1 / 8) * (1 + xi) * (1 + eta),
         (1 / 8) * (1 - xi) * (1 + eta)
     ]
-
     dphiloc = vcat(dphidxi', dphideta', dphidzeta')
-
     J = zeros(numcell, dim, dim)
     xg = zeros(numcell, dim)
-
-    # Ensamblaje de J y cálculo de XYG
-    for i in 1:dim          # dirección física (x,y,z)
-        for j in 1:dim      # derivada respecto a (xi,eta,zeta)
+    for i in 1:dim
+        for j in 1:dim
             for k in 1:numvxcell
                 J[:, i, j] .+= dphiloc[j, k] .* xe[:, k, i]
                 if j == 1   # sólo una vez por nodo para XYG
@@ -137,42 +220,66 @@ function Measure3D_Cell(xi::Float64, eta::Float64, zeta::Float64, xe::Array{Floa
             end
         end
     end
-
-    Jac = @. J[:,1,1]*(J[:,2,2]*J[:,3,3] - J[:,3,2]*J[:,2,3]) -
-        J[:,1,2]*(J[:,2,1]*J[:,3,3] - J[:,3,1]*J[:,2,3]) +
-        J[:,1,3]*(J[:,2,1]*J[:,3,2] - J[:,3,1]*J[:,2,2])
-
+    Jac = @. J[:, 1, 1] * (J[:, 2, 2] * J[:, 3, 3] - J[:, 3, 2] * J[:, 2, 3]) -
+             J[:, 1, 2] * (J[:, 2, 1] * J[:, 3, 3] - J[:, 3, 1] * J[:, 2, 3]) +
+             J[:, 1, 3] * (J[:, 2, 1] * J[:, 3, 2] - J[:, 3, 1] * J[:, 2, 2])
     return xg, Jac
 end
 
-function egauss(xc::Array{Float64,2}, conn::Array{Int,2}, gauss::AbstractMatrix{Float64})
-    dim = size(xc, 2)                 
-    l = size(gauss, 2)                
-    npts = l^dim                     
-    numcell = size(conn, 1)  
-    ncol = dim + 2          
+function egauss(xc::Matrix{Float64}, conn::Matrix{Int}, gauss::Matrix{Float64})
+    dim = size(xc, 2)
+    l = size(gauss, 2)
+    npts = l^dim
+    numcell = size(conn, 1)
+    numvxcell = size(conn, 2)
+    ncol = dim + 2
     gs = zeros(numcell * npts, ncol)
-    xe = Coords_by_Ele(xc, conn)   
+    xe = Coords_by_Ele(xc, conn)
     count = 0
-    if dim == 2
+    if numvxcell == 3
+        @assert dim == 2 "Triangles are expected for plane domains (2D)"
+        npts = size(gauss, 2)
+        gs = zeros(numcell * npts, ncol)
+        for p in 1:npts
+            count += 1
+            xi, eta = gauss[1, p], gauss[2, p]
+            w = gauss[3, p]
+            xg, Jac, _ = Measure2D_Tri(xi, eta, xe)
+            gs[count:npts:end, 1:2] = xg[:, 1:2]
+            gs[count:npts:end, 3] .= w
+            gs[count:npts:end, 4] .= Jac
+        end
+    elseif numvxcell == 4 && dim == 3
+        npts = size(gauss, 2)
+        gs = zeros(numcell * npts, ncol)
+        for p in 1:npts
+            count += 1
+            xi, eta, zeta = gauss[1, p], gauss[2, p], gauss[3, p]
+            w = gauss[4, p]
+            xg, Jac = Measure3D_Tetra(xi, eta, zeta, xe)
+            gs[count:npts:end, 1:3] = xg
+            gs[count:npts:end, 4] .= w
+            gs[count:npts:end, 5] .= Jac
+        end
+    elseif numvxcell == 4 && dim == 2
         for j in 1:l
             for i in 1:l
                 count += 1
                 xi, eta = gauss[1, i], gauss[1, j]
                 xg, Jac = Measure2D_Cell(xi, eta, xe)
-                gs[count:l^2:end, 1:2] = xg[:, 1:2]
-                gs[count:l^2:end, 3] .= gauss[2, i] * gauss[2, j]
-                gs[count:l^2:end, 4] .= Jac
+                gs[count:(l^2):end, 1:2] = xg[:, 1:2]
+                gs[count:(l^2):end, 3] .= gauss[2, i] * gauss[2, j]
+                gs[count:(l^2):end, 4] .= Jac
             end
         end
-    elseif dim == 3
+    elseif numvxcell == 8 && dim == 3
         for k in 1:l, j in 1:l, i in 1:l
             count += 1
             xi, eta, zeta = gauss[1, i], gauss[1, j], gauss[1, k]
             xg, Jac = Measure3D_Cell(xi, eta, zeta, xe)
-            gs[count:l^3:end, 1:3] = xg
-            gs[count:l^3:end, 4] .= gauss[2, i] * gauss[2, j] * gauss[2, k]
-            gs[count:l^3:end, 5] .= Jac
+            gs[count:(l^3):end, 1:3] = xg
+            gs[count:(l^3):end, 4] .= gauss[2, i] * gauss[2, j] * gauss[2, k]
+            gs[count:(l^3):end, 5] .= Jac
         end
     else
         error("Only 2D or 3D supported")
@@ -181,34 +288,53 @@ function egauss(xc::Array{Float64,2}, conn::Array{Int,2}, gauss::AbstractMatrix{
     return gs
 end
 
-function egauss_bound(xc::Array{Float64,2}, conn::Array{Int,2}, gauss::Array{Float64,2})
+function egauss_bound(xc::Matrix{Float64}, conn::Matrix{Int}, gauss::Matrix{Float64})
     dim = size(xc, 2)
-    l = size(gauss, 2)
-    npts = l^(dim-1)
     numcell = size(conn, 1)
+    numvxcell = size(conn, 2)
     ncol = dim + 2
-    gs = zeros(numcell * npts, ncol)
     xe = Coords_by_Ele(xc, conn)
     count = 0
     if dim == 2
-            for i in 1:l
-                count += 1
-                xi = gauss[1, i]
-                xg = zeros(numcell, 2)
-                xg[:, 1] .= (1 - xi)/2 * xe[:, 1, 1] .+ (1 + xi)/2 * xe[:, 2, 1]
-                xg[:, 2] .= (1 - xi)/2 * xe[:, 1, 2] .+ (1 + xi)/2 * xe[:, 2, 2]
-                gs[count:l:end,1:2] .= xg[:,1:2]
-                gs[count:l:end, 3] .= gauss[2, i]
-                gs[count:l:end, 4] .= sqrt.((xe[:,1,1]-xe[:,2,1]) .^ 2 + (xe[:,2,2]-xe[:,1,2]) .^ 2) / 2;
-            end
-    elseif dim == 3
-        for j in 1:l, i in 1:l
+        @assert numvxcell == 2 "Las celdas de frontera en 2D deben tener 2 nodos"
+        l = size(gauss, 2)
+        npts = l
+        gs = zeros(numcell * npts, ncol)
+        for i in 1:l
             count += 1
-            xi, eta = gauss[1, i], gauss[1, j]
-            xg, Jac = Measure2D_Cell(xi, eta, xe)
-            gs[count:l^2:end, 1:3] .= xg
-            gs[count:l^2:end, 4] .= gauss[2, i] * gauss[2, j]
-            gs[count:l^2:end, 5] .= Jac
+            xi = gauss[1, i]
+            xg = zeros(numcell, 2)
+            xg[:, 1] .= (1 - xi) / 2 * xe[:, 1, 1] .+ (1 + xi) / 2 * xe[:, 2, 1]
+            xg[:, 2] .= (1 - xi) / 2 * xe[:, 1, 2] .+ (1 + xi) / 2 * xe[:, 2, 2]
+            gs[count:l:end, 1:2] .= xg[:, 1:2]
+            gs[count:l:end, 3] .= gauss[2, i]
+            gs[count:l:end, 4] .= sqrt.((xe[:, 1, 1] - xe[:, 2, 1]) .^ 2 + (xe[:, 2, 2] - xe[:, 1, 2]) .^ 2) / 2
+        end
+    elseif dim == 3
+        if numvxcell == 4
+            l = size(gauss, 2)
+            npts = l^2
+            gs = zeros(numcell * npts, ncol)
+            for j in 1:l, i in 1:l
+                count += 1
+                xi, eta = gauss[1, i], gauss[1, j]
+                xg, Jac = Measure2D_Cell(xi, eta, xe)
+                gs[count:(l^2):end, 1:3] .= xg
+                gs[count:(l^2):end, 4] .= gauss[2, i] * gauss[2, j]
+                gs[count:(l^2):end, 5] .= Jac
+            end
+        elseif numvxcell == 3
+            npts = size(gauss, 2)
+            gs = zeros(numcell * npts, ncol)
+            for p in 1:npts
+                count += 1
+                xi, eta = gauss[1, p], gauss[2, p]
+                w = gauss[3, p]
+                xg, Jac, _ = Measure2D_Tri(xi, eta, xe)
+                gs[count:npts:end, 1:3] .= xg
+                gs[count:npts:end, 4] .= w
+                gs[count:npts:end, 5] .= Jac
+            end
         end
     else
         error("Only 2D or 3D supported")
@@ -219,7 +345,7 @@ end
 
 function fem_shape_line2(xi)
     phi = [0.5 * (1 - xi), 0.5 * (1 + xi)]
-    dphi_l = [-0.5  0.5]
+    dphi_l = [-0.5 0.5]
     return phi, dphi_l
 end
 
@@ -232,28 +358,45 @@ function fem_shape_quad4(xi, eta)
         0.25 * (1 - xi) * (1 + eta)
     ]
     dphi_l = [
-        -0.25*(1-eta)  0.25*(1-eta) 0.25*(1+eta) -0.25*(1+eta);
-        -0.25*(1-xi)  -0.25*(1+xi)  0.25*(1+xi)  0.25*(1-xi)
+        -0.25*(1-eta) 0.25*(1-eta) 0.25*(1+eta) -0.25*(1+eta);
+        -0.25*(1-xi) -0.25*(1+xi) 0.25*(1+xi) 0.25*(1-xi)
     ]
+    return phi, dphi_l
+end
+
+function fem_shape_tri3(xi, eta)
+    phi = [1.0 - xi - eta, xi, eta]
+    # dphi_l debe ser de tamaño (dim, n_nodes) -> (2, 3)
+    dphi_l = [-1.0 1.0 0.0;
+        -1.0 0.0 1.0]
     return phi, dphi_l
 end
 
 # 3D: Para volumen en 3D (Hexaedro de 8 nodos)
 function fem_shape_hex8(xi, eta, zeta)
     phi = [
-        (1/8)*(1-xi)*(1-eta)*(1-zeta), (1/8)*(1+xi)*(1-eta)*(1-zeta),
-        (1/8)*(1+xi)*(1+eta)*(1-zeta), (1/8)*(1-xi)*(1+eta)*(1-zeta),
-        (1/8)*(1-xi)*(1-eta)*(1+zeta), (1/8)*(1+xi)*(1-eta)*(1+zeta),
-        (1/8)*(1+xi)*(1+eta)*(1+zeta), (1/8)*(1-xi)*(1+eta)*(1+zeta)
+        (1 / 8) * (1 - xi) * (1 - eta) * (1 - zeta), (1 / 8) * (1 + xi) * (1 - eta) * (1 - zeta),
+        (1 / 8) * (1 + xi) * (1 + eta) * (1 - zeta), (1 / 8) * (1 - xi) * (1 + eta) * (1 - zeta),
+        (1 / 8) * (1 - xi) * (1 - eta) * (1 + zeta), (1 / 8) * (1 + xi) * (1 - eta) * (1 + zeta),
+        (1 / 8) * (1 + xi) * (1 + eta) * (1 + zeta), (1 / 8) * (1 - xi) * (1 + eta) * (1 + zeta)
     ]
     dphi_l = zeros(3, 8)
-    dphi_l[1,:] = [-(1/8)*(1-eta)*(1-zeta), (1/8)*(1-eta)*(1-zeta), (1/8)*(1+eta)*(1-zeta), -(1/8)*(1+eta)*(1-zeta), 
-                   -(1/8)*(1-eta)*(1+zeta), (1/8)*(1-eta)*(1+zeta), (1/8)*(1+eta)*(1+zeta), -(1/8)*(1+eta)*(1+zeta)]
-    dphi_l[2,:] = [-(1/8)*(1-xi)*(1-zeta), -(1/8)*(1+xi)*(1-zeta), (1/8)*(1+xi)*(1-zeta), (1/8)*(1-xi)*(1-zeta), 
-                   -(1/8)*(1-xi)*(1+zeta), -(1/8)*(1+xi)*(1+zeta), (1/8)*(1+xi)*(1+zeta), (1/8)*(1-xi)*(1+zeta)]
+    dphi_l[1, :] = [-(1 / 8) * (1 - eta) * (1 - zeta), (1 / 8) * (1 - eta) * (1 - zeta), (1 / 8) * (1 + eta) * (1 - zeta), -(1 / 8) * (1 + eta) * (1 - zeta),
+        -(1 / 8) * (1 - eta) * (1 + zeta), (1 / 8) * (1 - eta) * (1 + zeta), (1 / 8) * (1 + eta) * (1 + zeta), -(1 / 8) * (1 + eta) * (1 + zeta)]
+    dphi_l[2, :] = [-(1 / 8) * (1 - xi) * (1 - zeta), -(1 / 8) * (1 + xi) * (1 - zeta), (1 / 8) * (1 + xi) * (1 - zeta), (1 / 8) * (1 - xi) * (1 - zeta),
+        -(1 / 8) * (1 - xi) * (1 + zeta), -(1 / 8) * (1 + xi) * (1 + zeta), (1 / 8) * (1 + xi) * (1 + zeta), (1 / 8) * (1 - xi) * (1 + zeta)]
     # d/dzeta
-    dphi_l[3,:] = [-(1/8)*(1-xi)*(1-eta), -(1/8)*(1+xi)*(1-eta), -(1/8)*(1+xi)*(1+eta), -(1/8)*(1-xi)*(1+eta), 
-                    (1/8)*(1-xi)*(1-eta),  (1/8)*(1+xi)*(1-eta),  (1/8)*(1+xi)*(1+eta),  (1/8)*(1-xi)*(1+eta)]
+    dphi_l[3, :] = [-(1 / 8) * (1 - xi) * (1 - eta), -(1 / 8) * (1 + xi) * (1 - eta), -(1 / 8) * (1 + xi) * (1 + eta), -(1 / 8) * (1 - xi) * (1 + eta),
+        (1 / 8) * (1 - xi) * (1 - eta), (1 / 8) * (1 + xi) * (1 - eta), (1 / 8) * (1 + xi) * (1 + eta), (1 / 8) * (1 - xi) * (1 + eta)]
+    return phi, dphi_l
+end
+
+function fem_shape_tetra4(xi, eta, zeta)
+    phi = [1.0 - xi - eta - zeta, xi, eta, zeta]
+    dphi_l=zeros(3, 4)
+    dphi_l[1, :] = [-1.0, 1.0, 0.0, 0.0]
+    dphi_l[2, :] = [-1.0, 0.0, 1.0, 0.0]
+    dphi_l[3, :] = [-1.0, 0.0, 0.0, 1.0]
     return phi, dphi_l
 end
 
@@ -261,123 +404,292 @@ end
 # INTEGRACIÓN DE VOLUMEN (DOMINIO)
 # ==============================================================================
 
-function egauss_fem(xc::Matrix{Float64}, conn::Matrix{Int}, gauss_rule::Matrix{Float64})
+function egauss_fem(xc::Matrix{Float64}, conn::Matrix{Int}, gauss_rule::Matrix{Float64}; order=1)
     dim = size(xc, 2)
     l = size(gauss_rule, 2)
-    npts_cell = l^dim
     numcell = size(conn, 1)
-    numv_by_cell= size(conn,2)
+    numv_by_cell = size(conn, 2)
+
+    # IMPORTANTE: Corregir el cálculo de puntos totales según el elemento
+    if (dim == 2 && numv_by_cell == 3)||(dim == 3 && numv_by_cell == 4)
+        npts_cell = l # Los triángulos y tetraedros no usan producto tensorial
+    else
+        npts_cell = l^dim # Quads y Hexas sí
+    end
+
     total_gauss = numcell * npts_cell
+
     # Estructuras idénticas a IMLS
     gs = zeros(total_gauss, dim + 2)
-    PHI  = Vector{Vector{Float64}}(undef, total_gauss)
-    DPHI = Vector{Vector{SVector{dim, Float64}}}(undef, total_gauss)
-    DOM  = Vector{Vector{Int}}(undef, total_gauss)
+    PHI = Vector{Vector{Float64}}(undef, total_gauss)
+    DPHI = Vector{Vector{SVector{dim,Float64}}}(undef, total_gauss)
+    DOM = Vector{Vector{Int}}(undef, total_gauss)
     xe_all = Coords_by_Ele(xc, conn)
     idx = 1
+
     if dim == 2
-        @inbounds for e in 1:numcell
-            xe = @view xe_all[e, :, :]
-            for j in 1:l, i in 1:l
-                xi, eta = gauss_rule[1, i], gauss_rule[1, j]
-                w = gauss_rule[2, i] * gauss_rule[2, j]
-                
-                phi, dphi_l = fem_shape_quad4(xi, eta)
-                xg = SVector{2}(sum(phi[k] * xe[k, 1] for k in 1:numv_by_cell), sum(phi[k] * xe[k, 2] for k in 1:numv_by_cell))
-                J = @SMatrix [
-                    sum(dphi_l[1, k] * xe[k, 1] for k in 1:numv_by_cell)  sum(dphi_l[1, k] * xe[k, 2] for k in 1:numv_by_cell);
-                    sum(dphi_l[2, k] * xe[k, 1] for k in 1:numv_by_cell)  sum(dphi_l[2, k] * xe[k, 2] for k in 1:numv_by_cell)
-                ]
-                detJ = det(J)
-                invJT = inv(J)'
-                gs[idx, 1:2] .= xg; gs[idx, 3] = w; gs[idx, 4] = detJ
-                PHI[idx] = phi
-                DPHI[idx] = [invJT * SVector{2}(dphi_l[1, k], dphi_l[2, k]) for k in 1:numv_by_cell]
-                DOM[idx] = conn[e, :]
-                idx += 1
+        if numv_by_cell == 4
+            @inbounds for e in 1:numcell
+                xe = @view xe_all[e, :, :]
+                for j in 1:l, i in 1:l
+                    xi, eta = gauss_rule[1, i], gauss_rule[1, j]
+                    w = gauss_rule[2, i] * gauss_rule[2, j]
+                    phi, dphi_l = fem_shape_quad4(xi, eta)
+                    xg = SVector{2}(sum(phi[k] * xe[k, 1] for k in 1:numv_by_cell), sum(phi[k] * xe[k, 2] for k in 1:numv_by_cell))
+                    J = @SMatrix [
+                        sum(dphi_l[1, k] * xe[k, 1] for k in 1:numv_by_cell) sum(dphi_l[1, k] * xe[k, 2] for k in 1:numv_by_cell);
+                        sum(dphi_l[2, k] * xe[k, 1] for k in 1:numv_by_cell) sum(dphi_l[2, k] * xe[k, 2] for k in 1:numv_by_cell)
+                    ]
+                    detJ = det(J)
+                    invJT = inv(J)
+                    gs[idx, 1:2] .= xg
+                    gs[idx, 3] = w
+                    gs[idx, 4] = detJ
+                    if order == 0
+                        PHI[idx] = [1.0]
+                        DPHI[idx] = [zeros(SVector{2,Float64})]
+                        DOM[idx] = [e]
+                    else
+                        PHI[idx] = phi
+                        DPHI[idx] = [invJT * SVector{2}(dphi_l[1, k], dphi_l[2, k]) for k in 1:numv_by_cell]
+                        DOM[idx] = conn[e, :]
+                    end
+                    idx += 1
+                end
+            end
+        elseif numv_by_cell == 3  # <-- Corregido el nombre de la variable
+            @inbounds for e in 1:numcell
+                xe = @view xe_all[e, :, :]
+                for p in 1:l # Iteramos directamente sobre los puntos de la regla
+                    xi, eta = gauss_rule[1, p], gauss_rule[2, p]
+                    w = gauss_rule[3, p]
+
+                    # Llamamos a las funciones de forma correctas
+                    phi, dphi_l = fem_shape_tri3(xi, eta)
+
+                    xg = SVector{2}(sum(phi[k] * xe[k, 1] for k in 1:numv_by_cell), sum(phi[k] * xe[k, 2] for k in 1:numv_by_cell))
+                    J = @SMatrix [
+                        sum(dphi_l[1, k] * xe[k, 1] for k in 1:numv_by_cell) sum(dphi_l[1, k] * xe[k, 2] for k in 1:numv_by_cell);
+                        sum(dphi_l[2, k] * xe[k, 1] for k in 1:numv_by_cell) sum(dphi_l[2, k] * xe[k, 2] for k in 1:numv_by_cell)
+                    ]
+                    detJ = det(J) # Usamos el detJ del mapeo directo, no el de Measure2D_Tri
+                    invJT = inv(J)
+
+                    gs[idx, 1:2] .= xg
+                    gs[idx, 3] = w
+                    gs[idx, 4] = detJ
+                    if order == 0
+                        PHI[idx] = [1.0]
+                        DPHI[idx] = [zeros(SVector{2,Float64})]
+                        DOM[idx] = [e]
+                    else
+                        PHI[idx] = phi
+                        DPHI[idx] = [invJT * SVector{2}(dphi_l[1, k], dphi_l[2, k]) for k in 1:numv_by_cell]
+                        DOM[idx] = conn[e, :]
+                    end
+                    idx += 1
+                end
             end
         end
     elseif dim == 3
-        @inbounds for e in 1:numcell
-            xe = @view xe_all[e, :, :]
-            for k in 1:l, j in 1:l, i in 1:l
-                xi, eta, zeta = gauss_rule[1, i], gauss_rule[1, j], gauss_rule[1, k]
-                w = gauss_rule[2, i] * gauss_rule[2, j] * gauss_rule[2, k]
-                phi, dphi_l = fem_shape_hex8(xi, eta, zeta)
-                xg = SVector{3}(sum(phi[m] * xe[m, 1] for m in 1:numv_by_cell), sum(phi[m] * xe[m, 2] for m in 1:numv_by_cell), sum(phi[m] * xe[m, 3] for m in 1:numv_by_cell))
-                J = @SMatrix [
-                    sum(dphi_l[1,m]*xe[m,1] for m=1:numv_by_cell) sum(dphi_l[1,m]*xe[m,2] for m=1:numv_by_cell) sum(dphi_l[1,m]*xe[m,3] for m=1:numv_by_cell);
-                    sum(dphi_l[2,m]*xe[m,1] for m=1:numv_by_cell) sum(dphi_l[2,m]*xe[m,2] for m=1:numv_by_cell) sum(dphi_l[2,m]*xe[m,3] for m=1:numv_by_cell);
-                    sum(dphi_l[3,m]*xe[m,1] for m=1:numv_by_cell) sum(dphi_l[3,m]*xe[m,2] for m=1:numv_by_cell) sum(dphi_l[3,m]*xe[m,3] for m=1:numv_by_cell)
-                ]
-                detJ = det(J)
-                invJT = inv(J)'
-                gs[idx, 1:3] .= xg; gs[idx, 4] = w; gs[idx, 5] = detJ
-                PHI[idx] = phi
-                DPHI[idx] = [invJT * SVector{3}(dphi_l[1, m], dphi_l[2, m], dphi_l[3, m]) for m in 1:numv_by_cell]
-                DOM[idx] = conn[e, :]
-                idx += 1
+        if numv_by_cell == 8
+            @inbounds for e in 1:numcell
+                xe = @view xe_all[e, :, :]
+                for k in 1:l, j in 1:l, i in 1:l
+                    xi, eta, zeta = gauss_rule[1, i], gauss_rule[1, j], gauss_rule[1, k]
+                    w = gauss_rule[2, i] * gauss_rule[2, j] * gauss_rule[2, k]
+                    phi, dphi_l = fem_shape_hex8(xi, eta, zeta)
+                    xg = SVector{3}(sum(phi[m] * xe[m, 1] for m in 1:numv_by_cell), sum(phi[m] * xe[m, 2] for m in 1:numv_by_cell), sum(phi[m] * xe[m, 3] for m in 1:numv_by_cell))
+                    J = @SMatrix [
+                        sum(dphi_l[1, m] * xe[m, 1] for m = 1:numv_by_cell) sum(dphi_l[1, m] * xe[m, 2] for m = 1:numv_by_cell) sum(dphi_l[1, m] * xe[m, 3] for m = 1:numv_by_cell);
+                        sum(dphi_l[2, m] * xe[m, 1] for m = 1:numv_by_cell) sum(dphi_l[2, m] * xe[m, 2] for m = 1:numv_by_cell) sum(dphi_l[2, m] * xe[m, 3] for m = 1:numv_by_cell);
+                        sum(dphi_l[3, m] * xe[m, 1] for m = 1:numv_by_cell) sum(dphi_l[3, m] * xe[m, 2] for m = 1:numv_by_cell) sum(dphi_l[3, m] * xe[m, 3] for m = 1:numv_by_cell)
+                    ]
+                    detJ = det(J)
+                    invJT = inv(J)
+                    gs[idx, 1:3] .= xg
+                    gs[idx, 4] = w
+                    gs[idx, 5] = detJ
+                    if order == 0
+                        PHI[idx] = [1.0]
+                        DPHI[idx] = [zeros(SVector{3,Float64})]
+                        DOM[idx] = [e]
+                    else
+                        PHI[idx] = phi
+                        DPHI[idx] = [invJT * SVector{3}(dphi_l[1, m], dphi_l[2, m], dphi_l[3, m]) for m in 1:numv_by_cell]
+                        DOM[idx] = conn[e, :]
+                    end
+                    idx += 1
+                end
+            end
+        elseif numv_by_cell == 4
+            @inbounds for e in 1:numcell
+                xe = @view xe_all[e, :, :]
+                for p in 1:l # Iteramos directamente sobre los puntos de la regla
+                    xi, eta, zeta = gauss_rule[1, p], gauss_rule[2, p], gauss_rule[3, p]
+                    w = gauss_rule[4, p]
+                    phi, dphi_l = fem_shape_tetra4(xi, eta, zeta)
+                    xg = SVector{3}(sum(phi[m] * xe[m, 1] for m in 1:numv_by_cell), sum(phi[m] * xe[m, 2] for m in 1:numv_by_cell), sum(phi[m] * xe[m, 3] for m in 1:numv_by_cell))
+                    J = @SMatrix [
+                        sum(dphi_l[1, m] * xe[m, 1] for m = 1:numv_by_cell) sum(dphi_l[1, m] * xe[m, 2] for m = 1:numv_by_cell) sum(dphi_l[1, m] * xe[m, 3] for m = 1:numv_by_cell);
+                        sum(dphi_l[2, m] * xe[m, 1] for m = 1:numv_by_cell) sum(dphi_l[2, m] * xe[m, 2] for m = 1:numv_by_cell) sum(dphi_l[2, m] * xe[m, 3] for m = 1:numv_by_cell);
+                        sum(dphi_l[3, m] * xe[m, 1] for m = 1:numv_by_cell) sum(dphi_l[3, m] * xe[m, 2] for m = 1:numv_by_cell) sum(dphi_l[3, m] * xe[m, 3] for m = 1:numv_by_cell)
+                    ]
+                    detJ = det(J)
+                    invJT = inv(J)
+                    gs[idx, 1:3] .= xg
+                    gs[idx, 4] = w
+                    gs[idx, 5] = detJ
+                    if order == 0
+                        PHI[idx] = [1.0]
+                        DPHI[idx] = [zeros(SVector{3,Float64})]
+                        DOM[idx] = [e]
+                    else
+                        PHI[idx] = phi
+                        DPHI[idx] = [invJT * SVector{3}(dphi_l[1, m], dphi_l[2, m], dphi_l[3, m]) for m in 1:numv_by_cell]
+                        DOM[idx] = conn[e, :]
+                    end
+                    idx += 1
+                end
             end
         end
     end
     return gs, PHI, DPHI, DOM
 end
 
-function egauss_bound_fem(xc::Matrix{Float64}, conn::Matrix{Int}, gauss_rule::Matrix{Float64})
+function egauss_bound_fem(xc::Matrix{Float64}, conn::Matrix{Int}, gauss_rule::Matrix{Float64}; order=1)
     dim = size(xc, 2)
     l = size(gauss_rule, 2)
-    npts_bound = l^(dim-1)
     numcell = size(conn, 1)
+    numv_by_cell = size(conn, 2)
+    if dim == 2
+        npts_bound = l
+    elseif dim == 3
+        if numv_by_cell == 4
+            npts_bound = l^2 # Celdas cuadriláteras (producto tensorial)
+        elseif numv_by_cell == 3
+            npts_bound = l   # Celdas triangulares (regla directa)
+        else
+            error("Número de vértices por celda no soportado para frontera 3D: $numv_by_cell")
+        end
+    end
+
     total_gauss = numcell * npts_bound
     gs = zeros(total_gauss, dim + 2)
-    PHI  = Vector{Vector{Float64}}(undef, total_gauss)
-    DPHI = Vector{Vector{SVector{dim, Float64}}}(undef, total_gauss)
-    DOM  = Vector{Vector{Int}}(undef, total_gauss)
+    PHI = Vector{Vector{Float64}}(undef, total_gauss)
+    DPHI = Vector{Vector{SVector{dim,Float64}}}(undef, total_gauss)
+    DOM = Vector{Vector{Int}}(undef, total_gauss)
     xe_all = Coords_by_Ele(xc, conn)
-    numv_by_cell= size(conn,2)
     idx = 1
+
     if dim == 2
-       @inbounds for e in 1:numcell
+        @inbounds for e in 1:numcell
             xe = @view xe_all[e, :, :]
             for i in 1:l
-                xi = gauss_rule[1, i]; w = gauss_rule[2, i]
+                xi = gauss_rule[1, i]
+                w = gauss_rule[2, i]
                 phi, dphi_l = fem_shape_line2(xi)
                 xg = SVector{2}(sum(phi[k] * xe[k, 1] for k in 1:numv_by_cell), sum(phi[k] * xe[k, 2] for k in 1:numv_by_cell))
                 tx = sum(dphi_l[1, k] * xe[k, 1] for k in 1:2)
                 ty = sum(dphi_l[1, k] * xe[k, 2] for k in 1:2)
                 ds = sqrt(tx^2 + ty^2)
-                gs[idx, 1:2] .= xg; gs[idx, 3] = w; gs[idx, 4] = ds
-                PHI[idx] = phi
-                DPHI[idx] = [SVector{2}(dphi_l[1,k]*tx / ds^2, dphi_l[1,k]*ty / ds^2) for k in 1:numv_by_cell]
-                DOM[idx] = conn[e, :]
+                gs[idx, 1:2] .= xg
+                gs[idx, 3] = w
+                gs[idx, 4] = ds
+                if order == 0
+                    PHI[idx] = [1.0]
+                    DPHI[idx] = [zeros(SVector{2,Float64})]
+                    DOM[idx] = [e]
+                else
+                    PHI[idx] = phi
+                    DPHI[idx] = [SVector{2}(dphi_l[1, k] * tx / ds^2, dphi_l[1, k] * ty / ds^2) for k in 1:numv_by_cell]
+                    DOM[idx] = conn[e, :]
+                end
                 idx += 1
             end
         end
     elseif dim == 3
-        @inbounds for e in 1:numcell
-            xe = @view xe_all[e, :, :]
-            for j in 1:l, i in 1:l
-                xi, eta = gauss_rule[1, i], gauss_rule[1, j]
-                w = gauss_rule[2, i] * gauss_rule[2, j]
-                phi, dphi_l = fem_shape_quad4(xi, eta)
-                xg = SVector{3}(sum(phi[k]*xe[k,1] for k=1:numv_by_cell), sum(phi[k]*xe[k,2] for k=1:numv_by_cell), sum(phi[k]*xe[k,3] for k=1:numv_by_cell))
-                t1 = SVector{3}(sum(dphi_l[1,k]*xe[k,1] for k=1:numv_by_cell), sum(dphi_l[1,k]*xe[k,2] for k=1:numv_by_cell), sum(dphi_l[1,k]*xe[k,3] for k=1:numv_by_cell))
-                t2 = SVector{3}(sum(dphi_l[2,k]*xe[k,1] for k=1:numv_by_cell), sum(dphi_l[2,k]*xe[k,2] for k=1:numv_by_cell), sum(dphi_l[2,k]*xe[k,3] for k=1:numv_by_cell))
-                g11, g12, g22 = dot(t1,t1), dot(t1,t2), dot(t2,t2)
-                detG = g11*g22 - g12^2
-                dA = sqrt(detG)
-                invG = @SMatrix [g22/detG -g12/detG; -g12/detG g11/detG]
-                gs[idx, 1:3] .= xg; gs[idx, 4] = w; gs[idx, 5] = dA
-                PHI[idx] = phi
-                DPHI_e = Vector{SVector{3, Float64}}(undef, numv_by_cell)
-                for k in 1:numv_by_cell
-                    dphi_loc = SVector{2}(dphi_l[1,k], dphi_l[2,k])
-                    coeffs = invG * dphi_loc
-                    DPHI_e[k] = coeffs[1]*t1 + coeffs[2]*t2
+        if numv_by_cell == 4
+            @inbounds for e in 1:numcell
+                xe = @view xe_all[e, :, :]
+                for j in 1:l, i in 1:l
+                    xi, eta = gauss_rule[1, i], gauss_rule[1, j]
+                    w = gauss_rule[2, i] * gauss_rule[2, j]
+                    phi, dphi_l = fem_shape_quad4(xi, eta)
+                    xg = SVector{3}(sum(phi[k] * xe[k, 1] for k = 1:numv_by_cell), sum(phi[k] * xe[k, 2] for k = 1:numv_by_cell), sum(phi[k] * xe[k, 3] for k = 1:numv_by_cell))
+                    t1 = SVector{3}(sum(dphi_l[1, k] * xe[k, 1] for k = 1:numv_by_cell), sum(dphi_l[1, k] * xe[k, 2] for k = 1:numv_by_cell), sum(dphi_l[1, k] * xe[k, 3] for k = 1:numv_by_cell))
+                    t2 = SVector{3}(sum(dphi_l[2, k] * xe[k, 1] for k = 1:numv_by_cell), sum(dphi_l[2, k] * xe[k, 2] for k = 1:numv_by_cell), sum(dphi_l[2, k] * xe[k, 3] for k = 1:numv_by_cell))
+                    g11, g12, g22 = dot(t1, t1), dot(t1, t2), dot(t2, t2)
+                    detG = g11 * g22 - g12^2
+                    dA = sqrt(detG)
+                    invG = @SMatrix [g22/detG -g12/detG; -g12/detG g11/detG]
+                    gs[idx, 1:3] .= xg
+                    gs[idx, 4] = w
+                    gs[idx, 5] = dA
+                    if order == 0
+                        PHI[idx] = [1.0]
+                        DPHI[idx] = [zeros(SVector{3,Float64})]
+                        DOM[idx] = [e]
+                    else
+                        PHI[idx] = phi
+                        DPHI_e = Vector{SVector{3,Float64}}(undef, numv_by_cell)
+                        for k in 1:numv_by_cell
+                            dphi_loc = SVector{2}(dphi_l[1, k], dphi_l[2, k])
+                            coeffs = invG * dphi_loc
+                            DPHI_e[k] = coeffs[1] * t1 + coeffs[2] * t2
+                        end
+                        DPHI[idx] = DPHI_e
+                        DOM[idx] = conn[e, :]
+                    end
+                    idx += 1
                 end
-                DPHI[idx] = DPHI_e
-                DOM[idx] = conn[e, :]
-                idx += 1
+            end
+        elseif numv_by_cell == 3
+            @inbounds for e in 1:numcell
+                xe = @view xe_all[e, :, :]
+                for p in 1:l
+                    xi, eta = gauss_rule[1, p], gauss_rule[2, p]
+                    w = gauss_rule[3, p]
+                    phi, dphi_l = fem_shape_tri3(xi, eta)
+                    xg = SVector{3}(
+                        sum(phi[k] * xe[k, 1] for k in 1:numv_by_cell),
+                        sum(phi[k] * xe[k, 2] for k in 1:numv_by_cell),
+                        sum(phi[k] * xe[k, 3] for k in 1:numv_by_cell)
+                    )
+                    t1 = SVector{3}(
+                        sum(dphi_l[1, k] * xe[k, 1] for k in 1:numv_by_cell),
+                        sum(dphi_l[1, k] * xe[k, 2] for k in 1:numv_by_cell),
+                        sum(dphi_l[1, k] * xe[k, 3] for k in 1:numv_by_cell)
+                    )
+                    t2 = SVector{3}(
+                        sum(dphi_l[2, k] * xe[k, 1] for k in 1:numv_by_cell),
+                        sum(dphi_l[2, k] * xe[k, 2] for k in 1:numv_by_cell),
+                        sum(dphi_l[2, k] * xe[k, 3] for k in 1:numv_by_cell)
+                    )
+                    g11, g12, g22 = dot(t1, t1), dot(t1, t2), dot(t2, t2)
+                    detG = g11 * g22 - g12^2
+                    dA = sqrt(detG)
+                    invG = @SMatrix [g22/detG -g12/detG; -g12/detG g11/detG]
+                    gs[idx, 1:3] .= xg
+                    gs[idx, 4] = w
+                    gs[idx, 5] = dA
+                    if order == 0
+                        PHI[idx] = [1.0]
+                        DPHI[idx] = [zeros(SVector{3,Float64})]
+                        DOM[idx] = [e]
+                    else
+                        PHI[idx] = phi
+                        DPHI_e = Vector{SVector{3,Float64}}(undef, numv_by_cell)
+                        for k in 1:numv_by_cell
+                            dphi_loc = SVector{2}(dphi_l[1, k], dphi_l[2, k])
+                            coeffs = invG * dphi_loc
+                            DPHI_e[k] = coeffs[1] * t1 + coeffs[2] * t2
+                        end
+                        DPHI[idx] = DPHI_e
+                        DOM[idx] = conn[e, :]
+                    end
+                    idx += 1
+                end
             end
         end
     end

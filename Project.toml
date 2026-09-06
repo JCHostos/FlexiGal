@@ -4,21 +4,23 @@ authors = ["JCHostos <juancarlos.alvarezhostos@gmail.com>"]
 version = "0.1.0"
 
 [deps]
+Arpack = "7d9fca2a-8960-54d3-9f78-7d1dccf2cb97"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+NLsolve = "2774e3e8-f4cf-5e23-947b-6d7e65073b56"
+Polyester = "f517fe37-dbe3-4b94-8317-1923a5111588"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
-Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
 
 [compat]
+Arpack = "0.5.4"
 DelimitedFiles = "1.9.1"
-GLMakie = "0.13.6"
+GLMakie = "0.13.13"
 JLD2 = "0.6.4"
 LinearAlgebra = "1.11.0"
-Plots = "1.41.1"
+NLsolve = "4.5.1"
+Polyester = "0.7.19"
 SparseArrays = "1.11.0"
 StaticArrays = "1.9.15"
-Symbolics = "6.55.0"

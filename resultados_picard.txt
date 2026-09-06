@@ -1,0 +1,50 @@
+  8.872428 seconds (23.07 M allocations: 2.507 GiB, 12.50% gc time, 22.46% compilation time)
+Picard Iteration 1: Relative Error = 0.17625035529650518
+  6.825321 seconds (22.17 M allocations: 2.463 GiB, 19.78% gc time)
+Picard Iteration 2: Relative Error = 0.12026508028535014
+  6.352390 seconds (22.17 M allocations: 2.463 GiB, 15.84% gc time)
+Picard Iteration 3: Relative Error = 0.04287438471053346
+  7.200102 seconds (22.17 M allocations: 2.463 GiB, 23.55% gc time)
+Picard Iteration 4: Relative Error = 0.029687872860544924
+  5.071919 seconds (22.17 M allocations: 2.463 GiB, 15.23% gc time)
+Picard Iteration 5: Relative Error = 0.03340694154200765
+  6.490508 seconds (22.17 M allocations: 2.463 GiB, 23.16% gc time)
+Picard Iteration 6: Relative Error = 0.02142962960300379
+  5.402721 seconds (22.17 M allocations: 2.463 GiB, 16.31% gc time)
+Picard Iteration 7: Relative Error = 0.014251289041330804
+  5.748206 seconds (22.17 M allocations: 2.463 GiB, 27.40% gc time)
+Picard Iteration 8: Relative Error = 0.009626701144188766
+  4.992281 seconds (22.17 M allocations: 2.463 GiB, 15.33% gc time)
+Picard Iteration 9: Relative Error = 0.005618372457406761
+  7.038099 seconds (22.17 M allocations: 2.463 GiB, 22.02% gc time)
+Picard Iteration 10: Relative Error = 0.003110514084567245
+  5.498125 seconds (22.17 M allocations: 2.463 GiB, 15.42% gc time)
+Picard Iteration 11: Relative Error = 0.001859958226969092
+  6.526576 seconds (22.17 M allocations: 2.463 GiB, 26.95% gc time)
+Picard Iteration 12: Relative Error = 0.001294981857576187
+  5.739543 seconds (22.17 M allocations: 2.463 GiB, 14.33% gc time)
+Picard Iteration 13: Relative Error = 0.000980773393939742
+  6.358436 seconds (22.17 M allocations: 2.463 GiB, 25.41% gc time)
+Picard Iteration 14: Relative Error = 0.0006295499667585148
+  5.875956 seconds (22.17 M allocations: 2.463 GiB, 14.75% gc time)
+Picard Iteration 15: Relative Error = 0.000394335926576633
+  8.002325 seconds (22.17 M allocations: 2.463 GiB, 26.32% gc time)
+Picard Iteration 16: Relative Error = 0.0002731742785196517
+  5.819570 seconds (22.17 M allocations: 2.463 GiB, 15.94% gc time)
+Picard Iteration 17: Relative Error = 0.00018750062449660572
+  6.725967 seconds (22.17 M allocations: 2.463 GiB, 26.69% gc time)
+Picard Iteration 18: Relative Error = 0.00013457908922875247
+  5.765496 seconds (22.17 M allocations: 2.463 GiB, 14.59% gc time)
+Picard Iteration 19: Relative Error = 9.397398971513987e-5
+  6.531683 seconds (22.17 M allocations: 2.463 GiB, 22.27% gc time)
+Picard Iteration 20: Relative Error = 5.941057663743314e-5
+  5.389990 seconds (22.17 M allocations: 2.463 GiB, 15.31% gc time)
+Picard Iteration 21: Relative Error = 4.1862090085843184e-5
+  5.638296 seconds (22.17 M allocations: 2.463 GiB, 25.90% gc time)
+Picard Iteration 22: Relative Error = 2.8410144975282973e-5
+  5.129876 seconds (22.17 M allocations: 2.463 GiB, 15.94% gc time)
+Picard Iteration 23: Relative Error = 1.890828617538049e-5
+  5.784404 seconds (22.17 M allocations: 2.463 GiB, 29.00% gc time)
+Picard Iteration 24: Relative Error = 1.3143818836380368e-5
+  5.281556 seconds (22.17 M allocations: 2.463 GiB, 16.78% gc time)
+Picard Iteration 25: Relative Error = 8.61990521959909e-6

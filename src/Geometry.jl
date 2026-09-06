@@ -2,7 +2,7 @@ include("Meshing.jl")
 # ------------------------------
 # Structs for model
 # ------------------------------
-struct model{D}
+mutable struct model{D}
     domain::NTuple{D, Float64}    # Nuevo
     divisions::NTuple{D, Int}     # Nuevo
     x::Matrix{Float64}
@@ -275,6 +275,53 @@ function create_model(domain::NTuple{D,Float64}, divisions::NTuple{D,Int}; map::
     return model{D}(domain,divisions,x,x0,conn,entities,D,ncells,nnodes)
 end
 
+function create_model(x::Matrix{Float64}, conn::Matrix{Int}; map::Function=identity)
+    D = size(x, 2)
+    ncells = size(conn, 1)
+    nnodes = size(x, 1)
+    nvxcell = size(conn, 2)
+    @assert D == 2 || D == 3 "Solo dimensiones 2D o 3D son soportadas"
+    entities = Dict{Symbol,Dict{String,Union{Int,Matrix{Int}}}}()
+    if D == 2
+        if nvxcell == 3      # Triángulos
+            connintedges, connextedges = FindEdgesTri(conn)
+        elseif nvxcell == 4  # Cuadriláteros
+            connintedges, connextedges = FindEdgesQuad(conn)
+        else
+            error("Elemento 2D no soportado con nvxcell = $nvxcell")
+        end
+        entities[:ext_edges] = Dict("Boundary" => connextedges)
+        entities[:int_edges] = Dict("Internal_Edges" => connintedges)
+        entities[:faces]     = Dict("Domain" => conn)
+    elseif D == 3
+        if nvxcell == 4      # Tetraedros
+            connintfaces, connextfaces, connintedges, connextedges = FindFacesandEdgesTetra(conn)
+        elseif nvxcell == 8  # Hexaedros
+            connintfaces, connextfaces, connintedges, connextedges = FindFacesandEdgesHexa(conn)
+        else
+            error("Elemento 3D no soportado con nvxcell = $nvxcell")
+        end 
+        entities[:ext_faces] = Dict("Boundary" => connextfaces)
+        entities[:int_faces] = Dict("Internal_Faces" => connintfaces)
+        entities[:ext_edges] = Dict("External_Edges" => connextedges)
+        entities[:int_edges] = Dict("Internal_Edges" => connintedges)
+        entities[:volumes]   = Dict("Domain" => conn)
+    end
+    x0 = copy(x)
+    if map !== identity
+        @inbounds for i in 1:nnodes
+            new_coords = map(@view x[i, :])
+            for d in 1:D
+                x[i, d] = new_coords[d]
+            end
+        end
+    end
+    dummy_domain = ntuple(i -> 0.0, D)
+    dummy_divisions = ntuple(i -> 0, D) 
+    GC.gc()
+    return model{D}(dummy_domain, dummy_divisions, x, x0, conn, entities, D, ncells, nnodes)
+end
+
 function get_entity(model::model{D}, tag::String) where D
     for ent_type in keys(model.entities)
         subdict = get(model.entities, ent_type, Dict{String,Union{Int,Matrix{Int}}}())
@@ -324,5 +371,30 @@ function set_tag!(model::model{D}, region::Function; name::String="NewTag") wher
         return
     end
     model.entities[category][name] = model.conn[selected_indices, :] 
-    println("✅ Tag '$name' creado en :$category con $(length(selected_indices)) elementos.")
+    #println("✅ Tag '$name' created in :$category with $(length(selected_indices)) elements.")
+end
+
+function set_boundary_tag!(model::model{D}, region::Function; name::String="NewBoundaryTag") where D
+    category = (D == 2) ? :ext_edges : :ext_faces
+    boundary_conn = model.entities[category]["Boundary"]
+    n_b_elements = size(boundary_conn, 1)
+    nodes_per_b_element = size(boundary_conn, 2)
+    selected_indices = Int[]
+    for e in 1:n_b_elements
+        node_indices = boundary_conn[e, :]
+        centroid = zeros(D)
+        for idx in node_indices
+            centroid .+= @view model.x[idx, :]
+        end
+        centroid ./= nodes_per_b_element
+        if region(centroid)
+            push!(selected_indices, e)
+        end
+    end
+    if isempty(selected_indices)
+        @warn "La búsqueda geométrica para el tag de frontera '$name' no encontró elementos. Revisa la condición."
+        return
+    end
+    model.entities[category][name] = boundary_conn[selected_indices, :] 
+    # println("✅ Tag de frontera '$name' creado en :$category con $(length(selected_indices)) elementos.")
 end
