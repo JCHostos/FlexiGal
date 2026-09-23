@@ -482,7 +482,7 @@ function Local_Maximum_Entropy(gpos::AbstractVector{T}, x::Matrix{Float64}, v::V
     return p, dphi
 end
 
-function SHAPE_FUN(gs, x, dm; shape::Symbol=:rectangular, technique::Symbol=:IMLS, Layout::Symbol=:multilinear, gamma::Float64=5.0)
+function SHAPE_FUN(gs, x, dm; shape::Symbol=:rectangular, technique::Symbol=:IMLS, Layout::Symbol=:multilinear, gamma::Float64=5.0, Cq::Float64=4.3)
     numqc = size(gs, 1)
     dim = size(x, 2)
     PHI = Vector{Vector{Float64}}(undef, numqc)
@@ -494,7 +494,7 @@ function SHAPE_FUN(gs, x, dm; shape::Symbol=:rectangular, technique::Symbol=:IML
         if technique === :IMLS
             phi, dphi = Improved_Moving_Least_Squares(gpos, x, v, dm; shape=shape, Layout=Layout)
         elseif technique === :MK
-            phi, dphi = Moving_Kriging(gpos, x, v, dm; shape=shape, Layout=Layout)
+            phi, dphi = Moving_Kriging(gpos, x, v, dm; shape=shape, Layout=Layout,Cq=Cq)
         elseif technique === :LME
             phi, dphi = Local_Maximum_Entropy(gpos, x, v, dm; gamma=gamma, shape=shape)
         else

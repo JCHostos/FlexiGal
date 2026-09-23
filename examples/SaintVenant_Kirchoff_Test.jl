@@ -31,7 +31,7 @@ dΩ = IntegrationSet(Ω, ngpts)
 dΓ2 = IntegrationSet(Γ2, ngpts) 
 const u₀(x)=VectorField(-P*(2+ν)*x[2]/(6*E*I₀)*(x[2]^2-Ly^2/4), P*ν*Lx/(2*E*I₀)*x[2]^2)
 #const u₀=VectorField(0.0, 0.0)
-Uspace = ApproxSpace(model, [Ω, Γ1, Γ2], VectorField{2,Float64}; dmax, dm_map=dm_clustered, method=:EFG, technique=:MK, shape=:rectangular, Dirichlet_Boundaries=[Γ1],Dirichlet_Values=[u₀])
+Uspace = ApproxSpace(model, [Ω, Γ1, Γ2], VectorField{2,Float64}; dmax, dm_map=dm_clustered, method=:EFG, technique=:MK, shape=:rectangular, Dirichlet_Entities=[Γ1],Dirichlet_Values=[u₀])
 const s(x)=VectorField(0.0,P/(2*I₀)*(Ly^2/4 - x[2]^2))
 const g=VectorField(0.0,-0.6)
 

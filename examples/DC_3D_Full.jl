@@ -1,6 +1,6 @@
 using FlexiGal
 using LinearAlgebra
-include("/home/hostos/Documents/FlexiGal/examples/Tetra_DC.jl");
+include("Tetra_DC.jl");
 model = create_model(xyz, conn);
 dmax = 1.35;
 ngpts = 4;
@@ -36,10 +36,10 @@ set_boundary_tag!(model, Front; name="Front");
 dΩ = IntegrationSet(Ω, ngpts);
 dΓr = IntegrationSet(Γr, ngpts-1); dΓf = IntegrationSet(Γf, ngpts-1);
 
-Tspace = ApproxSpace(model, [Ω, Γb, Γr, Γf], Float64; dmax=dmax, method=:EFG, technique =:MK,
-    Dirichlet_Boundaries=[Γb], Dirichlet_Values=[Tc],shape=:spherical, cell_based=true);
+Tspace = ApproxSpace(model, [Ω, Γb, Γr, Γf], Float64; dmax=dmax, method=:EFG, technique =:LME, gamma=1.0,
+    Dirichlet_Entities=[Γb], Dirichlet_Values=[Tc],shape=:spherical, cell_based=true);
 
-fspace = ApproxSpace(model, Ω, Float64; dmax=dmax, method=:EFG, technique =:MK,shape=:spherical, cell_based=true);
+fspace = ApproxSpace(model, Ω, Float64; dmax=dmax, method=:EFG, technique =:LME,gamma=1.0,shape=:spherical, cell_based=true);
 
 const v = VectorField(0.0, 0.0, vc);
 
@@ -91,6 +91,6 @@ end
 #open("resultados_picard.txt", "w") do io
  #   redirect_stdout(io) do
         #global 
-        Th2, gₛh = Deferred_Piccard(Th, op, fspace, Tspace; max_iter=150, tol=1e-5)
+        Th2, gₛh = Deferred_Piccard(Th, op, fspace, Tspace; max_iter=150, tol=1e-5);
  #   end
 #end

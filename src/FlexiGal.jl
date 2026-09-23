@@ -6,9 +6,9 @@ include("Shape_Functions.jl")
 include("Integration.jl")
 include("WeakForm_Macro.jl")
 export create_model, BackgroundIntegration, Flexi_Space, Influence_Domains, FlexiFunction, ApproxSpace, Solve, build_space,
-    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, ⊙, Bilinear_Assembler, Linear_Assembler, VectorField, Linear_Problem, plot_field,
-    Triangulation, IntegrationSet, Get_space_from_IntegrationSet, tr, Id, NL_Solver, @WeakForm, @NL_WeakForm, NonLinearOperator, Get_Nodal_Values, Get_Measures,
-    Reassemble_Vector!, set_tag!, MultiApproxSpace, extract_FlexiFunction, set_boundary_tag!, EFGInterpolatedField, Get_Interpolated_Values
+    Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, ⊙, PointSet, δ, Bilinear_Assembler, Linear_Assembler, VectorField, Linear_Problem, plot_field, Assemble_Vector,
+    Triangulation, IntegrationSet, Get_space_from_IntegrationSet, tr, Id, NL_Solver, @WeakForm, @NL_WeakForm, NonLinearOperator, Get_Nodal_Values, Get_Measures, build_space,
+    Reassemble_Vector!, set_tag!, MultiApproxSpace, evaluate_at_point,  extract_FlexiFunction, set_boundary_tag!, EFGInterpolatedField, Get_Interpolated_Values
 struct Triangulation
     model::model
     tag::String
@@ -23,6 +23,23 @@ struct DomainMeasure
     gs::Matrix{Float64}
     degree::Int
 end
+
+struct PointSet
+    coords::Matrix{Float64}   # n_points × dim
+    degree::Int
+end
+
+PointSet(coords::Matrix{Float64}) = PointSet(coords, 0)
+
+PointSet(point::AbstractVector{<:Real}) = PointSet(reshape(collect(Float64.(point)), 1, :))
+
+function PointSet(points::AbstractVector{<:AbstractVector{<:Real}})
+    n = length(points); dim = length(points[1])
+    M = Matrix{Float64}(undef, n, dim)
+    for (i, p) in enumerate(points); M[i, :] .= p; end
+    return PointSet(M)
+end
+
 
 function BackgroundIntegration(iset::IntegrationSet, method::Symbol; order=1)
     model = iset.tri.model
@@ -102,21 +119,36 @@ struct ApproxSpace{DV}
     methods::Dict{String,Symbol}
     dm_map::Union{Function,Nothing}
     gamma::Float64
-    Dirichlet_Boundaries::Vector{Triangulation}
+    Cq::Float64
+    Dirichlet_Entities::Vector{Triangulation}
     Dirichlet_Values::Vector{DV}
+    Dirichlet_Masks::Vector{Vector{Bool}}
     constraint::Symbol
     order::Int
     cell_based::Bool
 end
 
 # El constructor que usaremos en tu script
-function ApproxSpace(model, triangs, Field_Type; dmax=1.5, shape::Symbol=:rectangular, technique=:IMLS, gamma=5.0,
+function ApproxSpace(model, triangs, Field_Type; dmax=1.5, shape::Symbol=:rectangular, technique=:IMLS, gamma=5.0, Cq=4.3,
     method=:EFG, dm_map=nothing,
-    Dirichlet_Boundaries=Triangulation[],
-    Dirichlet_Values=Float64[],constraint=:none, order=1, cell_based = false)
+    Dirichlet_Entities=Triangulation[],
+    Dirichlet_Values=Float64[],Dirichlet_Masks=Vector{Vector{Bool}}(),constraint=:none, order=1, cell_based = false)
     T = triangs isa Triangulation ? [triangs] : triangs
-    DT = Dirichlet_Boundaries isa Triangulation ? [Dirichlet_Boundaries] : Dirichlet_Boundaries
+    DT = Dirichlet_Entities isa Triangulation ? [Dirichlet_Entities] : Dirichlet_Entities
     DV = eltype(Dirichlet_Values)
+    D = field_dim(Field_Type)
+    final_masks = Vector{Vector{Bool}}()
+    if isempty(Dirichlet_Masks)
+        final_masks = [fill(true, D) for _ in 1:length(DT)]
+    else
+        if Dirichlet_Masks isa Vector{Bool}
+            final_masks = [convert(Vector{Bool}, Dirichlet_Masks)]
+        else
+            final_masks = [convert(Vector{Bool}, m) for m in Dirichlet_Masks]
+        end
+    end
+    @assert length(final_masks) == length(DT) "La cantidad de máscaras ($(length(final_masks))) debe coincidir con la cantidad de Dirichlet_Entities ($(length(DT)))"
+
     methods_dict = Dict{String,Symbol}()
     if method isa Symbol
         for t in T
@@ -136,7 +168,7 @@ function ApproxSpace(model, triangs, Field_Type; dmax=1.5, shape::Symbol=:rectan
             methods_dict[dt.tag] = default_m
         end
     end
-    return ApproxSpace{DV}(model, T, Field_Type, dmax, shape, technique, methods_dict,dm_map, gamma, DT, Dirichlet_Values, constraint, order, cell_based)
+    return ApproxSpace{DV}(model, T, Field_Type, dmax, shape, technique, methods_dict,dm_map, gamma,Cq, DT, Dirichlet_Values, final_masks, constraint, order, cell_based)
 end
 
 struct FlexiSpace{DG}
@@ -392,6 +424,7 @@ function build_space(recipe::ApproxSpace, isets::Vector{IntegrationSet})
     technique = recipe.technique
     dm_map = recipe.dm_map
     gamma = recipe.gamma
+    Cq=recipe.Cq
     needs_efg = any(get(recipe.methods, iset.tri.tag, :EFG) === :EFG for iset in isets)
     if needs_efg
         if recipe.cell_based
@@ -414,10 +447,10 @@ function build_space(recipe::ApproxSpace, isets::Vector{IntegrationSet})
             meas = BackgroundIntegration(iset, :EFG)
             if gs_type === :domain
                 global_node_ids = sort!(unique(view(conn, :)))
-                PHI, DPHI, DOM_local = SHAPE_FUN(meas.gs, m.x[global_node_ids,:], dm[global_node_ids,:]; shape=shape, technique=technique, Layout=Layout, gamma=gamma)
+                PHI, DPHI, DOM_local = SHAPE_FUN(meas.gs, m.x[global_node_ids,:], dm[global_node_ids,:]; shape=shape, technique=technique, Layout=Layout, gamma=gamma, Cq=Cq)
                 DOM = [global_node_ids[idx] for idx in DOM_local]
             else
-                PHI, DPHI, DOM = SHAPE_FUN(meas.gs, m.x, dm; shape=shape, technique=technique, Layout=Layout, gamma=gamma)
+                PHI, DPHI, DOM = SHAPE_FUN(meas.gs, m.x, dm; shape=shape, technique=technique, Layout=Layout, gamma=gamma,Cq=Cq)
             end
         end
         push!(gs_list, meas)
@@ -425,6 +458,27 @@ function build_space(recipe::ApproxSpace, isets::Vector{IntegrationSet})
         target_dict[tag] = (PHI, DPHI, DOM)
     end
     return FlexiSpace{DG}(results_domain, results_boundary, recipe.Field_Type, gs_list, m.nnodes)
+end
+
+function build_point_space(recipe::ApproxSpace, pset::PointSet)
+    m = recipe.model
+    dim = size(m.x, 2)
+    DG = dim
+    Layout = get_topology_layout(m.conn, dim)
+    dm = recipe.cell_based ?
+        Influence_Domains_CellBased(m, recipe.dmax; shape=recipe.shape, dm_map=recipe.dm_map) :
+        Influence_Domains(m, m.domain, m.divisions, recipe.dmax; shape=recipe.shape, dm_map=recipe.dm_map)
+
+    PHI, DPHI, DOM = SHAPE_FUN(pset.coords, m.x, dm; shape=recipe.shape, technique=recipe.technique, Layout=Layout, gamma=recipe.gamma)
+
+    n_pts = size(pset.coords, 1)
+    gs = hcat(pset.coords, ones(n_pts), ones(n_pts))   # peso=1, jacobiano=1 -> "sin cuadratura"
+    tag = "__point_load__"
+    measure = DomainMeasure(tag, gs, 0)
+    T_Shape = Tuple{Vector{Vector{Float64}}, Vector{Vector{SVector{DG, Float64}}}, Vector{Vector{Int}}}
+    domain_dict = Dict{String, T_Shape}(tag => (PHI, DPHI, DOM))
+    boundary_dict = Dict{String, T_Shape}()
+    return FlexiSpace(domain_dict, boundary_dict, recipe.Field_Type, [measure], m.nnodes)
 end
 
 struct MultiApproxSpace

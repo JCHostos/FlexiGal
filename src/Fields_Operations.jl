@@ -1,21 +1,30 @@
+# ==============================================================================
+# 1. Imports y operadores fundamentales
+# ==============================================================================
 import Base: +
 import Base: -
 import Base: *
-import LinearAlgebra: ⋅ , tr, I
-
+import LinearAlgebra: ⋅ , tr, I, adjoint
 function ⊙ end
-
+# ==============================================================================
+# 2. Caché para evaluación local
+# ==============================================================================
 struct FlexiCache{T}
     last_ind::Base.RefValue{Int32}
     last_val::Base.RefValue{T}
 end
-
 # Constructor para inicializar vacío
 @inline function FlexiCache(::Type{T}) where T
     # Inicializamos con -1 para que la primera comparación siempre falle
     return FlexiCache{T}(Ref(Int32(-1)), Ref(zero(T)))
 end
+# ==============================================================================
+# 3. Campos primarios: FlexiFunction y EFGInterpolatedField
+# ==============================================================================
 
+# ------------------------------------------------------------------------------
+# FlexiFunction
+# ------------------------------------------------------------------------------
 struct FlexiFunction{D, L, G}
     field_nodal::Vector{Float64}
     PHI::Vector{Vector{Float64}}
@@ -27,61 +36,50 @@ struct FlexiFunction{D, L, G}
     cache::FlexiCache{L}
 end
 
-struct EFGInterpolatedField{G, T}
-    field_nodal::Vector{T}
-    PHI::Vector{Vector{Float64}}
-    DPHI::Vector{Vector{SVector{G, Float64}}}
-    DOM::Vector{Vector{Int}}
-    targets::Matrix{Float64} # <-- Almacena los puntos de consulta
-end
-
-@inline function EFGInterpolatedField(field_nodal::Vector{T}, recipe::ApproxSpace, targets::Matrix{Float64}) where T
-    m = recipe.model
-    dim = size(m.x, 2)
-    @assert size(targets, 2) == dim "La dimensión de los puntos de consulta ($(size(targets, 2))) debe coincidir con la del modelo ($dim)"
-    Layout = get_topology_layout(m.conn, dim)
-    if recipe.cell_based
-        dm = Influence_Domains_CellBased(m, recipe.dmax; shape=recipe.shape, dm_map=recipe.dm_map)
-    else
-        dm = Influence_Domains(m::model, m.domain, m.divisions, recipe.dmax; shape=recipe.shape, dm_map=recipe.dm_map)
-    end
-    PHI_list, DPHI_list, DOM_list = SHAPE_FUN(targets, m.x, dm; shape = recipe.shape, technique = recipe.technique, Layout = Layout)
-    return EFGInterpolatedField{dim, T}(field_nodal, PHI_list, DPHI_list, DOM_list, targets)
-end
-
-@inline function Get_Interpolated_Values(efg_field::EFGInterpolatedField{G, T}) where {G, T}
-    n_targets = length(efg_field.PHI)
-    values = Vector{T}(undef, n_targets)
-    for i in 1:n_targets
-        phi = efg_field.PHI[i]
-        dom = efg_field.DOM[i] 
-        val = zero(T)
-        @inbounds for j in 1:length(dom)
-            val += phi[j] * efg_field.field_nodal[dom[j]]
-        end
-        values[i] = val
-    end 
-    return values
-end
-
-
+# Constructores
 @inline function FlexiFunction(field_nodal::Vector{Float64}, Space::FlexiSpace, Measure::DomainMeasure)
-    Shapes = Flexi_Measure(Measure::DomainMeasure, Space::FlexiSpace) 
+    Shapes = Flexi_Measure(Measure::DomainMeasure, Space::FlexiSpace)
     D = field_dim(Space.Field_Type)
-    DG = typeof(Shapes).parameters[1] 
+    DG = typeof(Shapes).parameters[1]
     L_type = D == 1 ? Float64 : SVector{D, Float64}
     return FlexiFunction{D, L_type, DG}(field_nodal,Shapes.PHI,Shapes.DPHI,Shapes.DOM,D,Measure,1.0,FlexiCache(L_type))
 end
 
 @inline function FlexiFunction(field_nodal::Vector{Float64},recipe::ApproxSpace,iset::IntegrationSet)
+    m = iset.tri.model
+    n_expected = m.nnodes
+    @assert length(field_nodal) == n_expected "Error de dimensión en FlexiFunction: el campo tiene $(length(field_nodal)) valores, pero el modelo tiene $n_expected nodos."
     space = build_space(recipe, [iset])
     return FlexiFunction(field_nodal, space, space.Measures[1])
 end
 
+@inline function FlexiFunction(val::Real, recipe::ApproxSpace, iset::IntegrationSet)
+    m = iset.tri.model
+    field_nodal = fill(Float64(val), m.nnodes)
+    return FlexiFunction(field_nodal, recipe, iset)
+end
+
+@inline function FlexiFunction(f::Function, recipe::ApproxSpace, iset::IntegrationSet)
+    m = iset.tri.model
+    dim = m.dim
+    nnodes = m.nnodes
+    x_1 = SVector{dim, Float64}(m.x[1, :])
+    val_1 = f(x_1)
+    T = typeof(val_1)
+    field_nodal = Vector{T}(undef, nnodes)
+    field_nodal[1] = val_1
+    @inbounds for i in 2:nnodes
+        x_i = SVector{dim, Float64}(m.x[i, :])
+        field_nodal[i] = f(x_i)
+    end
+    return FlexiFunction(field_nodal, recipe, iset)
+end
+
+# Actualización y acceso de valores nodales
 @inline function update_nodal_values!(f::FlexiFunction, u_new::AbstractVector)
     @assert length(f.field_nodal) == length(u_new) "Dimensiones incompatibles..."
     f.field_nodal .= u_new
-    empty!(f.cache) 
+    empty!(f.cache)
     return f
 end
 
@@ -92,6 +90,7 @@ end
 
 @inline Get_Nodal_Values(a::FlexiFunction{D, L, G}) where {D, L, G} = a.field_nodal
 
+# Evaluación de Global
 @inline function Get_Point_Values(f::FlexiFunction{D, L, G}) where {D, L, G}
     ngauss = length(f.PHI)
     res = Vector{L}(undef, ngauss)
@@ -118,38 +117,74 @@ end
     return res
 end
 
-struct VecFlexiFunction{D, L, G, M, T_RES, F<:FlexiFunction} 
+#------------------------------------------------------------------------------
+# EFGInterpolatedField
+# ------------------------------------------------------------------------------
+struct EFGInterpolatedField{G, T}
+    field_nodal::Vector{T}
+    PHI::Vector{Vector{Float64}}
+    DPHI::Vector{Vector{SVector{G, Float64}}}
+    DOM::Vector{Vector{Int}}
+    targets::Matrix{Float64} # <-- Almacena los puntos de consulta
+end
+
+#Constructor
+@inline function EFGInterpolatedField(field_nodal::Vector{T}, recipe::ApproxSpace, targets::Matrix{Float64}) where T
+    m = recipe.model
+    dim = size(m.x, 2)
+    @assert size(targets, 2) == dim "La dimensión de los puntos de consulta ($(size(targets, 2))) debe coincidir con la del modelo ($dim)"
+    Layout = get_topology_layout(m.conn, dim)
+    if recipe.cell_based
+        dm = Influence_Domains_CellBased(m, recipe.dmax; shape=recipe.shape, dm_map=recipe.dm_map)
+    else
+        dm = Influence_Domains(m::model, m.domain, m.divisions, recipe.dmax; shape=recipe.shape, dm_map=recipe.dm_map)
+    end
+    PHI_list, DPHI_list, DOM_list = SHAPE_FUN(targets, m.x, dm; shape = recipe.shape, technique = recipe.technique, Layout = Layout)
+    return EFGInterpolatedField{dim, T}(field_nodal, PHI_list, DPHI_list, DOM_list, targets)
+end
+
+#Evaluación Global
+@inline function Get_Interpolated_Values(efg_field::EFGInterpolatedField{G, T}) where {G, T}
+    n_targets = length(efg_field.PHI)
+    values = Vector{T}(undef, n_targets)
+    for i in 1:n_targets
+        phi = efg_field.PHI[i]
+        dom = efg_field.DOM[i]
+        val = zero(T)
+        @inbounds for j in 1:length(dom)
+            val += phi[j] * efg_field.field_nodal[dom[j]]
+        end
+        values[i] = val
+    end
+    return values
+end
+
+# Sobrecarga de Nabla
+# ------------------------------------------------------------------------------
+struct Nabla end
+const ∇ = Nabla()
+
+# ==============================================================================
+# 4. Campos derivados: VecFlexiFunction y VecEFGInterpolatedField
+# ==============================================================================
+# ------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+# VecFlexiFunction
+# ------------------------------------------------------------------------------
+struct VecFlexiFunction{D, L, G, M, T_RES, F<:FlexiFunction}
     source::F
     coeff::Float64
     cache::FlexiCache{T_RES}
 end
 
-struct VecEFGInterpolatedField{G, T, T_RES, F<:EFGInterpolatedField{G, T}}
-    source::F
-end
-
-@inline Get_Nodal_Values(a::VecFlexiFunction{D, L, G, M, T_RES, F}) where {D, L, G, M, T_RES, F} = a.source.field_nodal
-
-struct Nabla end
-const ∇ = Nabla()
-
+#Constructor (Como gradiente)
 @inline function (∇::Nabla)(f::FlexiFunction{D, L, G}) where {D, L, G}
     T_RES = D == 1 ? SVector{G, Float64} : SMatrix{D, G, Float64, D * G}
     return VecFlexiFunction{D, L, G, :grad, T_RES, typeof(f)}(f, f.coeff, FlexiCache(T_RES))
 end
 
-@inline function (∇::Nabla)(efg_field::EFGInterpolatedField{G, T}) where {G, T}
-    T_RES = if T <: Real
-        SVector{G, Float64}
-    elseif T <: SVector
-        D = length(T)
-        SMatrix{D, G, Float64, D * G}
-    else
-        error("Tipo de campo $T no soportado para gradientes")
-    end
-    return VecEFGInterpolatedField{G, T, T_RES, typeof(efg_field)}(efg_field)
-end
-
+# Evaluación (caso :grad)
 @inline function Get_Point_Values(f::VecFlexiFunction{D, L, G, :grad, T_RES}) where {D, L, G, T_RES}
     source = f.source
     ngauss = length(source.DPHI)
@@ -182,6 +217,53 @@ end
     return res
 end
 
+# Evaluación (caso :vol)
+@inline function Get_Point_Values(f::VecFlexiFunction{D,L,G,:vol,T_RES}) where {D,L,G,T_RES}
+    source = f.source # REDIRECCIÓN
+    fn = source.field_nodal
+    DOM = source.DOM
+    VEC_all = source.DPHI
+    ngauss = length(VEC_all)
+    res = Vector{T_RES}(undef, ngauss)
+    Id_mat = one(T_RES)
+    @inbounds for i in 1:ngauss
+        nodes = DOM[i]
+        base_vecs = VEC_all[i]
+        div_val = 0.0
+        for a in eachindex(nodes)
+            gn = nodes[a]
+            val_node = D == 1 ? fn[gn] : L(ntuple(d -> fn[(gn-1)*D + d], Val(D)))
+            div_val += dot(val_node, base_vecs[a])
+        end
+        res[i] = (div_val * f.coeff) * Id_mat
+    end
+    return res
+end
+
+#Extraer Valores Nodales
+@inline Get_Nodal_Values(a::VecFlexiFunction{D, L, G, M, T_RES, F}) where {D, L, G, M, T_RES, F} = a.source.field_nodal
+
+#------------------------------------------------------------------------------
+# VecEFGInterpolatedField
+# ------------------------------------------------------------------------------
+struct VecEFGInterpolatedField{G, T, T_RES, F<:EFGInterpolatedField{G, T}}
+    source::F
+end
+
+# Constructor (Como gradiente)
+@inline function (∇::Nabla)(efg_field::EFGInterpolatedField{G, T}) where {G, T}
+    T_RES = if T <: Real
+        SVector{G, Float64}
+    elseif T <: SVector
+        D = length(T)
+        SMatrix{D, G, Float64, D * G}
+    else
+        error("Tipo de campo $T no soportado para gradientes")
+    end
+    return VecEFGInterpolatedField{G, T, T_RES, typeof(efg_field)}(efg_field)
+end
+
+# Evaluación
 @inline function Get_Interpolated_Values(vec_efg::VecEFGInterpolatedField{G, T, T_RES}) where {G, T, T_RES}
     source = vec_efg.source
     n_targets = length(source.DPHI)
@@ -199,7 +281,7 @@ end
                 dphi[a] * fn[gn]
             else
                 fn[gn] * dphi[a]'
-            end     
+            end
             acc += term
         end
         res[i] = acc
@@ -209,60 +291,31 @@ end
 
 @inline Get_Point_Values(efg::EFGInterpolatedField) = Get_Interpolated_Values(efg)
 @inline Get_Point_Values(vec_efg::VecEFGInterpolatedField) = Get_Interpolated_Values(vec_efg)
-
-struct TransposedVecFlexiFunction{D, L, G, T_RES, F}
-    origin::VecFlexiFunction{D, L, G, :grad, T_RES, F}
-    D::Int
-end
-
-@inline Get_Nodal_Values(a::TransposedVecFlexiFunction{D, L, G, T_RES, F}) where {D, L, G, T_RES, F} = Get_Nodal_Values(a.origin)
-
-struct ConstantShiftFlexiFunction{D, L, T}
-    c::Float64
-    origin::T
-    op::Symbol
-    D::Int
-end
-
-struct CompositeFlexiFunction{D, L, T1, T2}
-    f1::T1
-    f2::T2
-    c1::Float64
-    c2::Float64
-    D::Int
-end
-
-import LinearAlgebra: adjoint
-
-# Sobrecarga del operador ' (adjunto)
-@inline adjoint(f::VecFlexiFunction{D, L, G, :grad, T_RES, F}) where {D, L, G, T_RES, F} = 
-    TransposedVecFlexiFunction{D, L, G, T_RES, F}(f, f.source.D)
-
-@inline function Get_Point_Values(f::TransposedVecFlexiFunction)
-    vals_orig = Get_Point_Values(f.origin) 
-    return [v' for v in vals_orig]
-end
-
+# ------------------------------------------------------------------------------
+# Campo volumétrico (trace / divergencia)
+# ------------------------------------------------------------------------------
 struct VolumetricFlexiFunction{D, L, G, T_ORIG}
     origin::T_ORIG
     D::Int
 end
 
-@inline Get_Nodal_Values(a::VolumetricFlexiFunction{D, L, G, T_ORIG}) where {D, L, G, T_ORIG} = Get_Nodal_Values(a.origin)
-
-
+# Constructores principales
 @inline function VolumetricFlexiFunction(f::T, D::Int) where {T}
     params = typeof(f).parameters
     return VolumetricFlexiFunction{params[1], params[2], params[3], T}(f, D)
 end
 
-@inline function (⋅)(::Nabla, f::FlexiFunction{D,L,G}) where {D,L,G}
-    g = ∇(f)
-    return VolumetricFlexiFunction(g, f.D)
+@inline function tr(f::VecFlexiFunction{D, L, G, :vol, T_RES, F}) where {D, L, G, T_RES, F}
+    return VolumetricFlexiFunction(f, f.source.D)
 end
 
+@inline function tr(f::VecFlexiFunction{D, L, G, :grad, T_RES, F}) where {D, L, G, T_RES, F}
+    return VolumetricFlexiFunction(f, f.source.D)
+end
+
+# Evaluación
 @inline function Get_Point_Values(f::VolumetricFlexiFunction{D,L,G,T_ORIG}) where {D,L,G,T_ORIG <: VecFlexiFunction}
-    f_orig = f.origin 
+    f_orig = f.origin
     source = f_orig.source
     fn = source.field_nodal
     DOM = source.DOM
@@ -278,7 +331,7 @@ end
             val_node = D == 1 ? fn[gn] : L(ntuple(d -> fn[(gn-1)*D + d], Val(D)))
             div_val += dot(val_node, base_vecs[a])
         end
-        res[i] = div_val * f_orig.coeff 
+        res[i] = div_val * f_orig.coeff
     end
     return res
 end
@@ -288,48 +341,140 @@ end
     return tr.(vals_orig)
 end
 
-@inline function Get_Point_Values(f::VecFlexiFunction{D,L,G,:vol,T_RES}) where {D,L,G,T_RES}
-    source = f.source # REDIRECCIÓN
-    fn = source.field_nodal
-    DOM = source.DOM
-    VEC_all = source.DPHI
-    
-    ngauss = length(VEC_all)
-    res = Vector{T_RES}(undef, ngauss)
-    Id_mat = one(T_RES) 
+# Extracción Valores Nodales
+@inline Get_Nodal_Values(a::VolumetricFlexiFunction{D, L, G, T_ORIG}) where {D, L, G, T_ORIG} = Get_Nodal_Values(a.origin)
+
+
+# ------------------------------------------------------------------------------
+# Transpuesta del gradiente
+# ------------------------------------------------------------------------------
+struct TransposedVecFlexiFunction{D, L, G, T_RES, F}
+    origin::VecFlexiFunction{D, L, G, :grad, T_RES, F}
+    D::Int
+end
+
+# Constructor
+@inline adjoint(f::VecFlexiFunction{D, L, G, :grad, T_RES, F}) where {D, L, G, T_RES, F} =
+    TransposedVecFlexiFunction{D, L, G, T_RES, F}(f, f.source.D)
+
+# Evaluación Global
+@inline function Get_Point_Values(f::TransposedVecFlexiFunction)
+    vals_orig = Get_Point_Values(f.origin)
+    return [v' for v in vals_orig]
+end
+
+#Extracción de valores nodales
+@inline Get_Nodal_Values(a::TransposedVecFlexiFunction{D, L, G, T_RES, F}) where {D, L, G, T_RES, F} = Get_Nodal_Values(a.origin)
+
+# Su traza (es la misma de la función origen previa a la transposición)
+@inline tr(f::TransposedVecFlexiFunction) = tr(f.origin)
+
+# ==============================================================================
+# 5. Campos algebraicos lazy
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Desplazamiento de campo
+# ------------------------------------------------------------------------------
+struct ConstantShiftFlexiFunction{D, L, T}
+    c::Float64
+    origin::T
+    op::Symbol
+    D::Int
+end
+
+struct FunctionShiftFlexiFunction{D, L, T, F}
+    origin::T
+    g::F
+    op::Symbol
+    D::Int
+    coeff::Float64
+end
+
+# Evaluación
+@inline function Get_Point_Values(f::ConstantShiftFlexiFunction)
+    vals = Get_Point_Values(f.origin)
+    if f.op === :c_minus_f
+        return f.c .- vals
+    elseif f.op === :c_plus_f
+        return f.c .+ vals
+    else # :f_minus_c
+        return vals .- f.c
+    end
+end
+
+@inline function Get_Point_Values(f::FunctionShiftFlexiFunction{D,L,T,F}) where {D,L,T,F}
+    vals_orig = Get_Point_Values(f.origin)
+    measure = domain_measure(f.origin)
+    gs = measure.gs
+    DG = size(gs, 2) - 2
+    ngauss = length(vals_orig)
+    res = Vector{L}(undef, ngauss)
+    op = f.op
     @inbounds for i in 1:ngauss
-        nodes = DOM[i]
-        base_vecs = VEC_all[i]
-        div_val = 0.0
-        for a in eachindex(nodes)
-            gn = nodes[a]
-            val_node = D == 1 ? fn[gn] : L(ntuple(d -> fn[(gn-1)*D + d], Val(D)))
-            div_val += dot(val_node, base_vecs[a])
+        x = SVector{DG, Float64}(ntuple(j -> gs[i, j], Val(DG)))
+        gx = f.g(x)
+        gx_conv = gx isa VectorField ? SVector(gx.data) : gx
+        base = if op === :f_minus_g
+            vals_orig[i] - gx_conv
+        elseif op === :g_minus_f
+            gx_conv - vals_orig[i]
+        else # :f_plus_g o :g_plus_f
+            vals_orig[i] + gx_conv
         end
-        res[i] = (div_val * f.coeff) * Id_mat
+        
+        res[i] = base * f.coeff
     end
     return res
 end
 
+@inline tr(f::FunctionShiftFlexiFunction) = VolumetricFlexiFunction(f, get_D(f))
+# ------------------------------------------------------------------------------
+# Composición lineal de campos
+# ------------------------------------------------------------------------------
+struct CompositeFlexiFunction{D, L, T1, T2}
+    f1::T1
+    f2::T2
+    c1::Float64
+    c2::Float64
+    D::Int
+end
+
+# Evaluación
 @inline function Get_Point_Values(f::CompositeFlexiFunction{D,L}) where {D,L}
     vals1 = Get_Point_Values(f.f1)
     vals2 = Get_Point_Values(f.f2)
     return f.c1 .* vals1 .+ f.c2 .* vals2
 end
 
+# Traza (Combinación lineal de las trazas de cada componente)
+@inline tr(f::CompositeFlexiFunction) = f.c1 * tr(f.f1) + f.c2 * tr(f.f2)
+
+# ------------------------------------------------------------------------------
+# Sobrecarga de divergencia de un campo vectorial
+# ------------------------------------------------------------------------------
+@inline function (⋅)(::Nabla, f::FlexiFunction{D,L,G}) where {D,L,G}
+    g = ∇(f)
+    return VolumetricFlexiFunction(g, f.D)
+end
+
+# ------------------------------------------------------------------------------
+# Funciones espaciales escalar/vector
+# ------------------------------------------------------------------------------
 struct ScalarFuncXFlexiFunction{D,L,G,F,T,DG,L_OUT}
-    f::F        
+    f::F
     origin::T
 end
-
 struct VectorFuncXFlexiFunction{D,L,G,F,T,DG,L_OUT}
-    v::F         
+    v::F
     origin::T
 end
-
+# ------------------------------------------------------------------------------
+# Constructores
+# ------------------------------------------------------------------------------
 @inline function (*)(f::F, g::FlexiFunction{D, L, G}) where {F<:Function, D, L, G}
     raw_cols = size(g.Measure.gs, 2)
-    DG = raw_cols - 2 
+    DG = raw_cols - 2
     x_test = SVector{DG, Float64}(ntuple(j -> g.Measure.gs[1, j], Val(DG)))
     val_test = f(x_test)
     if val_test isa Number
@@ -342,28 +487,7 @@ end
     end
 end
 
-@inline function (*)(f1::CompositeFlexiFunction, f2::CompositeFlexiFunction)
-    D = get_D(f1)
-    L_out = promote_type(eltype(f1), eltype(f2))
-    G = typeof(domain_measure(f1))
-    return ProductFlexiFunction{D, L_out, G, typeof(f1), typeof(f2)}(f1, f2, D, 1.0)
-end
-
-
-@inline function (*)(f1::CompositeFlexiFunction, f2::FlexiFunction)
-    D = get_D(f1)
-    L_out = promote_type(eltype(f1), eltype(f2))
-    G = typeof(domain_measure(f1))
-    return ProductFlexiFunction{D, L_out, G, typeof(f1), typeof(f2)}(f1, f2, D, 1.0)
-end
-
-@inline function (*)(f1::FlexiFunction, f2::CompositeFlexiFunction)
-    D = get_D(f1)
-    L_out = promote_type(eltype(f1), eltype(f2))
-    G = typeof(domain_measure(f1))
-    return ProductFlexiFunction{D, L_out, G, typeof(f1), typeof(f2)}(f1, f2, D, 1.0)
-end
-
+# Evaluación de ScalarFuncXFlexiFunction
 @inline function Get_Point_Values(field::ScalarFuncXFlexiFunction{D,L,G,F,T,DG,L_OUT}) where {D,L,G,F,T,DG,L_OUT}
     g = field.origin
     gs = g.Measure.gs
@@ -372,7 +496,7 @@ end
     fn = g.field_nodal
     DOM = g.DOM
     PHI = g.PHI
-    c = g.coeff 
+    c = g.coeff
     @inbounds for i in 1:ngauss
         x = SVector{DG, Float64}(ntuple(j -> gs[i, j], Val(DG)))
         nodes = DOM[i]
@@ -392,6 +516,7 @@ end
     return res
 end
 
+# Evaluación de VectorFuncXFlexiFunction
 @inline function Get_Point_Values(field::VectorFuncXFlexiFunction{D,L,G,F,T,DG,L_OUT}) where {D,L,G,F,T,DG,L_OUT}
     g = field.origin
     gs = g.Measure.gs
@@ -424,6 +549,51 @@ end
         end
     end
     return res
+end
+# ------------------------------------------------------------------------------
+# Productos entre funciones compuestas linealmente
+# ------------------------------------------------------------------------------
+struct ProductFlexiFunction{D, L, G, T1, T2}
+    f1::T1
+    f2::T2
+    D::Int
+    coeff::Float64
+end
+
+#Constructores a partir de productos
+@inline function (*)(f1::CompositeFlexiFunction, f2::CompositeFlexiFunction)
+    D = get_D(f1)
+    L_out = promote_type(eltype(f1), eltype(f2))
+    G = typeof(domain_measure(f1))
+    return ProductFlexiFunction{D, L_out, G, typeof(f1), typeof(f2)}(f1, f2, D, 1.0)
+end
+@inline function (*)(f1::CompositeFlexiFunction, f2::FlexiFunction)
+    D = get_D(f1)
+    L_out = promote_type(eltype(f1), eltype(f2))
+    G = typeof(domain_measure(f1))
+    return ProductFlexiFunction{D, L_out, G, typeof(f1), typeof(f2)}(f1, f2, D, 1.0)
+end
+@inline function (*)(f1::FlexiFunction, f2::CompositeFlexiFunction)
+    D = get_D(f1)
+    L_out = promote_type(eltype(f1), eltype(f2))
+    G = typeof(domain_measure(f1))
+    return ProductFlexiFunction{D, L_out, G, typeof(f1), typeof(f2)}(f1, f2, D, 1.0)
+end
+
+#Traza
+@inline tr(f::ProductFlexiFunction) = VolumetricFlexiFunction(f, f.D)
+
+# Evaluación
+@inline function Get_Point_Values(f::ProductFlexiFunction{D, L, G}) where {D, L, G}
+    vals1 = Get_Point_Values(f.f1) 
+    vals2 = Get_Point_Values(f.f2)
+    return (f.coeff) .* (vals1 .* vals2)
+end
+
+#Evaluación (Cuando el producto está contenido en una VolumetricFlexiFunction)
+@inline function Get_Point_Values(f::VolumetricFlexiFunction{D, L, G, <:ProductFlexiFunction}) where {D, L, G}
+    vals_prod = Get_Point_Values(f.origin) 
+       return tr.(vals_prod)
 end
 
 @inline (∇::Nabla)(::Nothing) = nothing
@@ -534,17 +704,6 @@ end
     return f.c1 * val1 + f.c2 * val2
 end
 
-@inline function Get_Point_Values(f::ConstantShiftFlexiFunction)
-    vals = Get_Point_Values(f.origin)
-    if f.op === :c_minus_f
-        return f.c .- vals
-    elseif f.op === :c_plus_f
-        return f.c .+ vals
-    else # :f_minus_c
-        return vals .- f.c
-    end
-end
-
 @inline function evaluate_at_point(f::ConstantShiftFlexiFunction, b::AnyFlexiMeasure)
     val = evaluate_at_point(f.origin, b)
     if f.op === :c_minus_f
@@ -554,28 +713,6 @@ end
     else # :f_minus_c
         return val - f.c
     end
-end
-
-@inline function Internal_Product(a::FlexiFunction, b::FlexiFunction)
-    as = Get_Point_Values(a)
-    bs = Get_Point_Values(b)
-    ns = length(as)
-    product = Vector{Float64}(undef, ns)
-    @inbounds for i in 1:ns
-        product[i] = as[i] * bs[i]
-    end
-    return product
-end
-
-@inline function Internal_Product(a::VecFlexiFunction, b::VecFlexiFunction)
-    as = Get_Point_Values(a)
-    bs = Get_Point_Values(b)
-    ns = length(as)
-    product = Vector{Float64}(undef, ns)
-    @inbounds for i in 1:ns
-        product[i] = dot(as[i], bs[i])
-    end
-    return product
 end
 
 # Functions-SingleMeasures
@@ -605,55 +742,11 @@ end
     end
 end
 
-struct ProductFlexiFunction{D, L, G, T1, T2}
-    f1::T1
-    f2::T2
-    D::Int
-    coeff::Float64
-end
-
-# Ajustamos la firma para que acepte el parámetro F de los wrappers
-#@inline function (*)(f1::TransposedVecFlexiFunction{D,L,G,T_RES1,F1}, 
- #   f2::VecFlexiFunction{D,L,G,M,T_RES2,F2}) where {D,L,G,T_RES1,F1,M,T_RES2,F2} 
- #   return ProductFlexiFunction{D, L, G, typeof(f1), typeof(f2)}(f1, f2, D, 1.0)
-#end
-
-# Sobrecarga para producto entre funciones escalares
-#@inline function (*)(f1::FlexiFunction{D,L,G}, f2::FlexiFunction{D,L,G}) where {D,L,G}
- #   return ProductFlexiFunction{D, L, G, typeof(f1), typeof(f2)}(f1, f2, D, 1.0)
-#end
-
-@inline function Get_Point_Values(f::ProductFlexiFunction{D, L, G}) where {D, L, G}
-    vals1 = Get_Point_Values(f.f1) 
-    vals2 = Get_Point_Values(f.f2)
-    return (f.coeff) .* (vals1 .* vals2)
-end
-
 @inline function evaluate_at_point(f::ProductFlexiFunction, b::AnyFlexiMeasure)
     m1 = evaluate_at_point(f.f1, b)
     m2 = evaluate_at_point(f.f2, b)
     return f.coeff * (m1 * m2)
 end
-
-@inline function Get_Point_Values(f::VolumetricFlexiFunction{D, L, G, <:ProductFlexiFunction}) where {D, L, G}
-    vals_prod = Get_Point_Values(f.origin) 
-       return tr.(vals_prod)
-end
-
-@inline function tr(f::VecFlexiFunction{D, L, G, :grad, T_RES, F}) where {D, L, G, T_RES, F}
-    return VolumetricFlexiFunction(f, f.source.D)
-end
-
-@inline function tr(f::VecFlexiFunction{D, L, G, :vol, T_RES, F}) where {D, L, G, T_RES, F}
-    return VolumetricFlexiFunction(f, f.source.D)
-end
-
-@inline tr(f::ProductFlexiFunction) = VolumetricFlexiFunction(f, f.D)
-
-@inline tr(f::TransposedVecFlexiFunction) = tr(f.origin)
-
-@inline tr(f::CompositeFlexiFunction) = f.c1 * tr(f.f1) + f.c2 * tr(f.f2)
-
 
 #Constructor VectorField
 struct VectorField{D,T}
@@ -916,9 +1009,21 @@ end
     return evaluate_at_point(f.f, b) 
 end
 
-struct Composition{T}
-    f::Function
+struct Composition{F,T,L}
+    f::F
     field::T
+    cache::FlexiCache{L}
+end
+
+@inline function _make_composition(f::F, u::T) where {F<:Function, T}
+    Tin = eltype(u)
+    L = Base.promote_op(f, Tin)
+    if L === Any
+        vals = Get_Point_Values(u)
+        @assert !isempty(vals) "No se puede determinar el tipo de salida de Composition."
+        L = typeof(f(vals[1]))
+    end
+    return Composition{F,T,L}(f, u, FlexiCache(L))
 end
 
 @inline domain_measure(f::FlexiFunction) = f.Measure
@@ -933,21 +1038,79 @@ end
 @inline domain_measure(f::ProductFlexiFunction) = domain_measure(f.f1)
 @inline domain_measure(f::ConstantShiftFlexiFunction) = domain_measure(f.origin)
 @inline domain_measure(c::Composition) = domain_measure(c.field)
+@inline domain_measure(f::FunctionShiftFlexiFunction) = domain_measure(f.origin)
 # Alerta por si se intenta integrar la Identidad pura (no tiene sentido físico sola)
 @inline domain_measure(::IdentityOperator) = error("IdentityOperator no posee un DomainMeasure propio.")
 
+struct DotProductFlexiFunction{D, T1, T2}
+    f1::T1
+    f2::T2
+    D::Int
+end
+
 const AnyFlexiField = Union{FlexiFunction,VecFlexiFunction,TransposedVecFlexiFunction,VolumetricFlexiFunction,
 CompositeFlexiFunction,ScalarFuncXFlexiFunction,VectorFuncXFlexiFunction,ProductFlexiFunction,ScalarTimesId,IdentityOperator,ConvectiveField,ConstantShiftFlexiFunction,
-Composition}
+Composition, DotProductFlexiFunction, FunctionShiftFlexiFunction}
+
+# Sobrecarga del operador ⊙ entre dos campos evaluables cualquiera
+@inline function ⊙(f1::AnyFlexiField, f2::AnyFlexiField)
+    D = get_D(f1)
+    return DotProductFlexiFunction{D, typeof(f1), typeof(f2)}(f1, f2, D)
+end
+
+@inline function (*)(f::AnyFlexiField, ::IdentityOperator)
+    return ScalarTimesId(f, get_D(f))
+end
+@inline (*)(::IdentityOperator, f::AnyFlexiField) = f * Id
+
+# Evaluación punto a punto en los puntos de Gauss
+@inline function Get_Point_Values(dp::DotProductFlexiFunction)
+    vals1 = Get_Point_Values(dp.f1)
+    vals2 = Get_Point_Values(dp.f2)
+    ngauss = length(vals1)
+    T_RES = promote_type(eltype(vals1[1]), eltype(vals2[1]))
+    res = Vector{T_RES}(undef, ngauss)
+    @inbounds for i in 1:ngauss
+        res[i] = dot(vals1[i], vals2[i])
+    end
+    return res
+end
 
 import Base: ∘
 
-@inline (f::Function) ∘ (u::AnyFlexiField) = Composition(f, u)
-@inline (u::AnyFlexiField) ∘ (f::Function) = Composition(f, u)
-@inline (u::EFGInterpolatedField) ∘ (f::Function) = Composition(f, u)
-@inline (f::Function) ∘ (u::EFGInterpolatedField) = Composition(f, u)
+@inline (f::Function) ∘ (u::AnyFlexiField) = _make_composition(f, u)
+@inline (u::AnyFlexiField) ∘ (f::Function) = _make_composition(f, u)
+@inline (u::EFGInterpolatedField) ∘ (f::Function) = _make_composition(f, u)
+@inline (f::Function) ∘ (u::EFGInterpolatedField) = _make_composition(f, u)
 
- @inline function Get_Point_Values(comp::FlexiGal.Composition)
+@inline function (*)(f::AnyFlexiField, ls::LazySumGrads{D, DG}) where {D, DG}
+    new_terms = map(t -> f * t, ls.terms)
+    return LazySumGrads{D, DG, typeof(new_terms)}(new_terms)
+end
+
+@inline (*)(ls::LazySumGrads, f::AnyFlexiField) = f * ls
+
+@inline function (*)(comp::Composition, v::VectorField{D, VecSingleFlexiMeasure{DG}}) where {D, DG}
+    val = evaluate_at_point(comp, v.data[1])
+    return val * v
+end
+@inline (*)(v::VectorField{D, VecSingleFlexiMeasure{DG}}, comp::Composition) where {D, DG} = comp * v
+
+@inline function (*)(comp::Composition, ag::AdjointGrad{D, DG}) where {D, DG}
+    val = evaluate_at_point(comp, ag.g.data[1])
+    return val * ag
+end
+
+@inline (*)(ag::AdjointGrad, comp::Composition) = comp * ag
+
+@inline function (*)(comp::Composition, d::DivergenceScalar{D, DG}) where {D, DG}
+    val = evaluate_at_point(comp, d.divfield)
+    return val * d
+end
+@inline (*)(d::DivergenceScalar, comp::Composition) = comp * d
+
+
+@inline function Get_Point_Values(comp::FlexiGal.Composition)
     inner_vals = Get_Point_Values(comp.field) # o el nombre del atributo interno
     return comp.f.(inner_vals)
 end
@@ -959,14 +1122,40 @@ end
     return _apply_transform(grad_uh, du)
 end
 
-@inline function evaluate_at_point(comp::Composition, measure::SingleFlexiMeasure{DG}) where {DG}
+@inline function evaluate_at_point(comp::Composition, measure::AnyFlexiMeasure)
+    idx = measure.ind
+    if comp.cache.last_ind[] == idx
+        return comp.cache.last_val[]
+    end
     val_inner = evaluate_at_point(comp.field, measure)
-    return comp.f(val_inner)
+    res = comp.f(val_inner)
+    comp.cache.last_ind[] = idx
+    comp.cache.last_val[] = res
+    return res
+end
+
+@inline function evaluate_at_point(comp::Composition, measure::SingleFlexiMeasure{DG}) where {DG}
+    idx = measure.ind
+    if comp.cache.last_ind[] == idx
+        return comp.cache.last_val[]
+    end
+    val_inner = evaluate_at_point(comp.field, measure)
+    res = comp.f(val_inner)
+    comp.cache.last_ind[] = idx
+    comp.cache.last_val[] = res
+    return res
 end
 
 @inline function evaluate_at_point(comp::Composition, measure::VecSingleFlexiMeasure{DG}) where {DG}
+    idx = measure.ind
+    if comp.cache.last_ind[] == idx
+        return comp.cache.last_val[]
+    end
     val_inner = evaluate_at_point(comp.field, measure)
-    return comp.f(val_inner)
+    res = comp.f(val_inner)
+    comp.cache.last_ind[] = idx
+    comp.cache.last_val[] = res
+    return res
 end
 
 
@@ -1113,18 +1302,18 @@ end
     end, Val(D * D)))
 end
 
-# Constructor para Integral
 struct Integrand{F}
     f::F
 end
 const ∫ = Integrand
 
-#Integrando un campo dado
+@inline domain_measure(dp::DotProductFlexiFunction) = domain_measure(dp.f1)
+
 @inline function Integrate(a::Integrand{<:AbstractVector}, b::Union{IntegrationSet, AbstractVector{<:IntegrationSet}})
     gs = b.gs
     jac = gs[:, end]
     weight = gs[:, end-1]
-    return a.object .* (jac .* weight)
+    return a.f .* (jac .* weight)
 end
 
 @inline function Integrate(a::Integrand{<:AnyFlexiField}, b::IntegrationSet)
@@ -1138,26 +1327,53 @@ end
     return sum(vals .* (jac .* weight))
 end
 
-@inline ()(a::Integrand{<:AbstractVector}, b::IntegrationSet) = Integrate(a,b)
-
-@inline function Integrate(a::Integrand{Real}, b::IntegrationSet)
-    gs = b.gs
+@inline function Integrate(a::Integrand{<:Real}, b::IntegrationSet; method::Symbol=:EFG)
+    res = BackgroundIntegration(b, method)
+    measure = res isa Tuple ? res[1] : res   
+    gs = measure.gs
     weight = @view gs[:, end-1]
     jac = @view gs[:, end]
-    return sum(a*jac .* weight)
+    return sum(a.f * (jac .* weight))
 end
 
-@inline ()(a::Integrand{Real}, b::IntegrationSet) = Integrate(a,b)
+struct RawField{F<:Function}
+    f::F
+end
+
+@inline function Integrate(a::Integrand{<:RawField}, b::IntegrationSet)
+    measure = BackgroundIntegration(b, :EFG)
+    gs = measure.gs
+    DG = size(gs, 2) - 2
+    weight = @view gs[:, end-1]
+    jac = @view gs[:, end]
+    n = size(gs, 1)
+    vals = Vector{Float64}(undef, n)
+    @inbounds for i in 1:n
+        x = SVector{DG,Float64}(ntuple(j -> gs[i, j], Val(DG)))
+        vals[i] = a.f.f(x)
+    end
+    return sum(vals .* (jac .* weight))
+end
+@inline (a::Integrand{<:RawField})(b::IntegrationSet) = Integrate(a, b)
 
 struct Integrated{T, M}
     arg::T
     b::M
 end
 
-#Local Valuation of Integrals for assembling matrices and vectors
+@inline function Integrate(a::Integrand, b::PointSet)
+    return Integrated(a.f, b)
+end
+
+@inline (a::Integrand)(b::PointSet) = Integrate(a, b)
+
+const δ = Integrand 
+
 @inline function Integrate(a::Integrand, b::M) where {M<:Union{IntegrationSet, AbstractVector{<:IntegrationSet}}}
     return Integrated(a.f, b)
 end
+
+@inline (a::Integrand)(b::Union{IntegrationSet, AbstractVector{<:IntegrationSet}}) = Integrate(a, b)
 
 struct MultiIntegrated
     terms::Vector{Integrated}
@@ -1183,15 +1399,17 @@ end
 @inline get_D(f::VecFlexiFunction) = f.source.D  # El wrapper mira a la madre
 @inline get_D(f::TransposedVecFlexiFunction) = f.D
 @inline get_D(f::VolumetricFlexiFunction) = f.D
-@inline get_D(f::CompositeFlexiFunction) = f.D
-@inline get_D(f::ProductFlexiFunction) = f.D
 @inline get_D(f::ScalarFuncXFlexiFunction) = f.D
 @inline get_D(f::VectorFuncXFlexiFunction) = f.D
 @inline get_D(f::ScalarTimesId{T, D}) where {T, D} = D
 @inline get_D(f::ConstantShiftFlexiFunction) = f.D
 @inline get_D(c::Composition) = get_D(c.field)
+@inline get_D(p::ProductFlexiFunction) = max(get_D(p.f1), get_D(p.f2))
+@inline get_D(c::CompositeFlexiFunction) = max(get_D(c.f1), get_D(c.f2))
+@inline get_D(dp::DotProductFlexiFunction) = max(get_D(dp.f1), get_D(dp.f2))
 @inline get_D(efg::EFGInterpolatedField{G, T}) where {G, T} = G
 @inline get_D(vec_efg::VecEFGInterpolatedField{G, T}) where {G, T} = G
+@inline get_D(f::FunctionShiftFlexiFunction) = f.D
 
 @inline function (+)(a::AnyFlexiField, b::AnyFlexiField)
     D = get_D(a)
@@ -1226,9 +1444,9 @@ end
 end
 
 @inline ()(a::VecSingleFlexiMeasure{DG}, b::VecSingleFlexiMeasure{DG}) where {DG} = a.vec * b.vec'
-@inline ()(a::Integrand,b::Union{IntegrationSet, AbstractVector{<:IntegrationSet}}) = Integrate(a, b)
+@inline ()(a::Integrand,b::Union{IntegrationSet, AbstractVector{<:IntegrationSet}, PointSet}) = Integrate(a, b)
 
-@inline (*)(a::Integrand,b::Union{IntegrationSet, AbstractVector{<:IntegrationSet}}) = Integrate(a, b)
+@inline (*)(a::Integrand,b::Union{IntegrationSet, AbstractVector{<:IntegrationSet}, PointSet}) = Integrate(a, b)
 @inline (*)(k::Real, s::SingleFlexiMeasure{DG}) where DG = SingleFlexiMeasure{DG}(k*s.phi, s.dphi, s.coord, s.ind)
 @inline (*)(s::SingleFlexiMeasure{DG}, k::Real) where DG = k * s
 @inline (*)(k::Real, v::VecSingleFlexiMeasure{DG}) where DG = VecSingleFlexiMeasure{DG}(k*v.vec, v.coord, v.ind)
@@ -1319,6 +1537,28 @@ end
         return SingleFlexiMeasure{DG}(val * v.data[i].phi, v.data[i].dphi, v.data[i].coord, v.data[i].ind)
     end, Val(D)))
 end
+
+@inline function (*)(a::AnyFlexiField, b::SingleFlexiMeasure{DG}) where {DG}
+    val = evaluate_at_point(a, b)
+    if val isa Number
+        return SingleFlexiMeasure{DG}(val * b.phi, b.dphi, b.coord, b.ind)
+    else
+        return VecSingleFlexiMeasure{DG}(val * b.phi, b.coord, b.ind)
+    end
+end
+
+@inline (*)(b::SingleFlexiMeasure, a::AnyFlexiField) = a * b
+
+@inline function (*)(a::AnyFlexiField, b::VecSingleFlexiMeasure{DG}) where {DG}
+    val = evaluate_at_point(a, b)
+    return VecSingleFlexiMeasure{DG}(val * b.vec, b.coord, b.ind)
+end
+
+@inline (*)(b::VecSingleFlexiMeasure, a::AnyFlexiField) = a * b
+
+@inline function evaluate_at_point(dp::DotProductFlexiFunction, b::AnyFlexiMeasure)
+    return dot(evaluate_at_point(dp.f1, b), evaluate_at_point(dp.f2, b))
+end
 @inline (*)(v::VectorField{D, SingleFlexiMeasure{DG}}, comp::Composition) where {D, DG} = comp * v
 @inline (*)(a::DivergenceScalar{D,DG}, b::DivergenceScalar{D,DG}) where {D,DG} = Internal_Product(a, b)
 @inline (*)(a::Real, v::VectorField{D,SingleFlexiMeasure{DG}}) where {D,DG} = VectorField(ntuple(i -> a * v[i], D)...)
@@ -1360,6 +1600,28 @@ end
     return ConstantShiftFlexiFunction{D, eltype(f), typeof(f)}(Float64(c), f, :f_minus_c, D)
 end
 
+@inline function (-)(f::T, g::F) where {T<:AnyFlexiField, F<:Function}
+    D = get_D(f)
+    L = eltype(f)
+    return FunctionShiftFlexiFunction{D, L, T, F}(f, g, :f_minus_g, D, 1.0)
+end
+@inline function (-)(g::F, f::T) where {T<:AnyFlexiField, F<:Function}
+    D = get_D(f)
+    L = eltype(f)
+    return FunctionShiftFlexiFunction{D, L, T, F}(f, g, :g_minus_f, D, 1.0)
+end
+
+@inline function (+)(f::T, g::F) where {T<:AnyFlexiField, F<:Function}
+    D = get_D(f)
+    L = eltype(f)
+    return FunctionShiftFlexiFunction{D, L, T, F}(f, g, :f_plus_g, D, 1.0)
+end
+@inline function (+)(g::F, f::T) where {T<:AnyFlexiField, F<:Function}
+    D = get_D(f)
+    L = eltype(f)
+    return FunctionShiftFlexiFunction{D, L, T, F}(f, g, :g_plus_f, D, 1.0)
+end
+
 @inline function (*)(c::Real, f::FlexiFunction{D, L, G}) where {D, L, G}
     return FlexiFunction{D, L, G}(f.field_nodal, f.PHI, f.DPHI, f.DOM, f.D, f.Measure, f.coeff * Float64(c),f.cache)
 end
@@ -1389,6 +1651,11 @@ end
 end
 
 @inline (*)(f::ProductFlexiFunction, c::Real) = c * f
+
+@inline function (*)(c::Real, f::FunctionShiftFlexiFunction{D,L,T,F}) where {D,L,T,F}
+    return FunctionShiftFlexiFunction{D,L,T,F}(f.origin, f.g, f.op, f.D, f.coeff * Float64(c))
+end
+@inline (*)(f::FunctionShiftFlexiFunction, c::Real) = c * f
 
 @inline function (*)(c::Real, f::CompositeFlexiFunction{D, L, T1, T2}) where {D, L, T1, T2}
     k = Float64(c)
@@ -1431,14 +1698,21 @@ import Base: eltype
 @inline eltype(::ConvectiveField{D, L, G, TG, TV}) where {D, L, G, TG, TV} = L
 @inline eltype(efg::EFGInterpolatedField{G, T}) where {G, T} = T
 @inline eltype(vec_efg::VecEFGInterpolatedField{G, T, T_RES}) where {G, T, T_RES} = T_RES
-@inline eltype(c::Composition) = Base.promote_op(c.f, eltype(c.field))
+@inline eltype(::Composition{F,T,L}) where {F,T,L} = L
+@inline eltype(::FunctionShiftFlexiFunction{D,L,T,F}) where {D,L,T,F} = L
 
 @inline (⋅)(f::Function, b::VecSingleFlexiMeasure{DG}) where DG = Internal_Product(f, b)
 @inline (⋅)(f::VecSingleFlexiMeasure{DG}, b::Function) where DG = f⋅b
 @inline (⋅)(a::FlexiFunction, b::VecSingleFlexiMeasure{DG}) where DG = Internal_Product(a, b)
 @inline (⋅)(a::VecFlexiFunction, b::SingleFlexiMeasure{DG}) where DG = Internal_Product(a, b)
 @inline (⋅)(a::FlexiFunction, b::SingleFlexiMeasure{DG}) where DG = Internal_Product(a, b)
-@inline (⋅)(a::FlexiFunction, b::FlexiFunction) = Internal_Product(a, b)
+@inline function (⋅)(a::FunctionShiftFlexiFunction, b::FunctionShiftFlexiFunction)
+    D = get_D(a)
+    return DotProductFlexiFunction{D, typeof(a), typeof(b)}(a, b, D)
+end
+@inline function (⋅)(a::FlexiFunction{D,L,G}, b::FlexiFunction{D,L,G}) where {D,L<:SVector,G}
+    return DotProductFlexiFunction{D, typeof(a), typeof(b)}(a, b, D)
+end
 @inline (⋅)(a::VecFlexiFunction, b::VecFlexiFunction) = Internal_Product(a, b)
 @inline (⋅)(k::Real, v::VecSingleFlexiMeasure{DG}) where DG = VecSingleFlexiMeasure{DG}(k*v.vec, v.coord, v.ind)
 @inline (⋅)(v::VecSingleFlexiMeasure{DG}, k::Real) where DG = k * v
@@ -1677,3 +1951,7 @@ end
 @inline (-)(::Nothing, a::Any) = -a
 @inline (*)(a::Number, ::IdentityOperator) = a
 @inline (*)(::IdentityOperator, a::Number) = a
+@inline (⋅)(::Nabla, ::Real) = 0.0
+@inline (⋅)(::Real, ::Nabla) = 0.0
+@inline (⋅)(::Nabla, ::Nothing) = nothing
+@inline (⋅)(::Nothing, ::Nabla) = nothing

@@ -1,7 +1,7 @@
 using FlexiGal
 using LinearAlgebra
-include("/home/hostos/Documents/FlexiGal/examples/Triangles_SquareCav_CircObs_Pe20.jl");
-dmax = 2.0;
+include("Triangles_SquareCav_CircObs_Pe20.jl");
+dmax = 1.65;
 ngpts = 3;
 model = create_model(xy, conn);
 const Pe=20.0;
@@ -25,10 +25,10 @@ set_boundary_tag!(model, Top; name="Top"); set_boundary_tag!(model, Bottom; name
 ΓT = Triangulation(model, "Top"); ΓB = Triangulation(model, "Bottom");
 dΩ_fem = IntegrationSet(Ω_fem, ngpts); dΩ_mk = IntegrationSet(Ω_mk, ngpts);
 
-Tspace = ApproxSpace(model, [Ω_fem, Ω_mk, ΓL, ΓR, ΓT, ΓB], Float64; dmax, method=[:FEM,:EFG,:FEM,:FEM,:FEM,:FEM], technique =:LME,shape=:circular, 
-cell_based=true, Dirichlet_Boundaries=[ΓL,ΓR,ΓT,ΓB], Dirichlet_Values=[TL,TR,x->(TL+TR)/2+(TR-TL)*x[1],x->(TL+TR)/2+(TR-TL)*x[1]]);
+Tspace = ApproxSpace(model, [Ω_fem, Ω_mk, ΓL, ΓR, ΓT, ΓB], Float64; dmax, method=[:FEM,:EFG,:FEM,:FEM,:FEM,:FEM], technique =:LME, gamma = 2.0,shape=:circular, 
+cell_based=true, Dirichlet_Entities=[ΓL,ΓR,ΓT,ΓB], Dirichlet_Values=[TL,TR,x->(TL+TR)/2+(TR-TL)*x[1],x->(TL+TR)/2+(TR-TL)*x[1]]);
 
-fspace = ApproxSpace(model, [Ω_fem, Ω_mk, ΓL, ΓR, ΓT, ΓB], Float64; dmax, method=[:FEM,:EFG,:FEM,:FEM,:FEM,:FEM], technique =:LME, shape=:circular, 
+fspace = ApproxSpace(model, [Ω_fem, Ω_mk, ΓL, ΓR, ΓT, ΓB], Float64; dmax, method=[:FEM,:EFG,:FEM,:FEM,:FEM,:FEM], technique =:LME, gamma = 2.0, shape=:circular, 
 cell_based=true);
 const v(x) = VectorField(-u0 * x[2], u0 * x[1])
 @WeakForm a(δT, T) = ∫(∇(δT) ⋅ (kₛ * ∇(T)) + δT * (ρₛ * cpₛ * v ⋅ ∇(T)))dΩ_fem + 
@@ -82,14 +82,3 @@ function Deferred_Piccard(Th, op, fspace, Tspace; tol=1e-6, max_iter=60)
     return Th_new, gₛh
 end
 Th2,gₛh = Deferred_Piccard(Th, op, fspace, Tspace; max_iter=150, tol=1e-5);
-@WeakForm a2(δT, T) = ∫(δT*T)dΩ_fem + ∫(δT*T)dΩ_mk
-@WeakForm b2(δT) = ∫(δT*Th2[dΩ_fem])dΩ_fem + ∫(δT*Th2[dΩ_mk])dΩ_mk
-Ω = Triangulation(model, "Domain");
-dΩ = IntegrationSet(Ω, ngpts);
-Tspaceᵢ = ApproxSpace(model, [Ω], Float64; dmax=dmax*1.5, method=:EFG, technique =:LME,shape=:circular, cell_based=true);
-op2 = Linear_Problem(a2, b2, Tspaceᵢ);
-Th3 =Solve(op2);
-Tvals = Get_Nodal_Values(Th3[dΩ_fem]);
-include("/home/hostos/Documents/FlexiGal/examples/Triang_Cav_CirObs.jl"); # de aquí salen los últimos xy y conn para postprocesamiento
-model1 = create_model(xy, conn);
-Thn=EFGInterpolatedField(Tvals,Tspaceᵢ,model1.x)

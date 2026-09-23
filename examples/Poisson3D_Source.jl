@@ -8,16 +8,8 @@ ngpts = 3
 Ω = Triangulation(model, "Domain")
 Γ = Triangulation(model, "Boundary")
 dΩ = IntegrationSet(Ω,ngpts)
-Tspace =  ApproxSpace(model, [Ω,Γ], Float64; dmax, Dirichlet_Boundaries=[Γ], method=:EFG, technique=:IMLS);
+Tspace =  ApproxSpace(model, [Ω,Γ], Float64; dmax, Dirichlet_Entities=[Γ], Dirichlet_Values=[0.0], method=:EFG, technique=:IMLS);
 @WeakForm a(δT, T) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
-@WeakForm b(δT) = ∫(5000 * δT)dΩ
+@WeakForm b(δT) = ∫(50 * δT)dΩ
 @time op = Linear_Problem(a, b, Tspace)
-@time Th = Solve(op,dΩ)
-Tgauss = Get_Point_Values(Th);
-#=if !haskey(ENV, "GITHUB_ACTIONS")
-    using GLMakie
-    fig = Figure()
-    ax = Axis3(fig[1, 1], aspect=Domain)
-    scatter!(ax, gs[:, 1], gs[:, 2], gs[:, 3]; color=Tgauss, markersize=4, colormap=:jet)
-    fig
-end=#
+@time Th = Solve(op,dΩ);

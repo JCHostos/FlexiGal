@@ -7,10 +7,10 @@ function _assemble_scalar!(row, col, val, f_pure::F, Shapes::FlexiMeasure{DG}, D
         dom = DOM[ind]
         nvec = length(dom)
         weightjac = gs[ind, end] * gs[ind, end-1]
-       # c_raw = @view coords[ind, :]
-       # coord_v = SVector{DG,Float64}(c_raw)
-       coord_v = SVector{DG,Float64}(ntuple(i -> coords[ind, i], Val(DG)))
-       phi_point = ALL_PHI[ind]    # Vector{Float64}
+        # c_raw = @view coords[ind, :]
+        # coord_v = SVector{DG,Float64}(c_raw)
+        coord_v = SVector{DG,Float64}(ntuple(i -> coords[ind, i], Val(DG)))
+        phi_point = ALL_PHI[ind]    # Vector{Float64}
         dphi_point = ALL_DPHI[ind]  # Vector{SVector{DG, Float64}}
         @inbounds for a in 1:nvec
             sa = SingleFlexiMeasure{DG}(phi_point[a], dphi_point[a], coord_v, ind)
@@ -54,7 +54,7 @@ function _assemble_vector!(row, col, val, f_pure::F, Shapes::FlexiMeasure{DG}, D
 
             @inbounds for b in 1:nvec
                 sb = SingleFlexiMeasure{DG}(phi_point[b], dphi_point[b], coord_v, ind)
-              vb = if D == 2
+                vb = if D == 2
                     VectorField{2,typeof(sb)}((sb, sb))
                 else
                     VectorField{3,typeof(sb)}((sb, sb, sb))
@@ -173,13 +173,13 @@ function get_closest_degree(model, target_degree::Int)
     available_degrees = if nnodes_per_cell == 4 && dim == 3
         [1, 3, 4]
     else
-        return target_degree 
+        return target_degree
     end
     for deg in available_degrees
         if deg >= target_degree
             return deg
         end
-    end 
+    end
     return maximum(available_degrees)
 end
 
@@ -188,19 +188,16 @@ function Linear_Problem(Bi_op::Union{Integrated,MultiIntegrated}, Li_op::Union{I
     D = field_dim(recipe.Field_Type)
     ncells = recipe.model.ncells
     nnodes = recipe.model.nnodes
-    
     # Determinamos los GDL sin mutar la malla
     is_p0 = (recipe.order == 0)
     target_nnodes = is_p0 ? ncells : nnodes
     ndofs = D * target_nnodes
-    
     max_deg = 1
-    Spaces = Dict{IntegrationSet,FlexiSpace}()
-    
+    Spaces = Dict{Union{IntegrationSet,PointSet},FlexiSpace}()
     # Función auxiliar para construir/corregir el espacio sin duplicar código
     function get_space(iset)
         if !haskey(Spaces, iset)
-            sp = build_space(recipe, [iset])
+            sp = iset isa PointSet ? build_point_space(recipe, iset) : build_space(recipe, [iset])
             if is_p0 && sp.nnodes != ncells
                 sp = FlexiSpace(sp.domain, sp.boundary, sp.Field_Type, sp.Measures, ncells)
             end
@@ -208,9 +205,7 @@ function Linear_Problem(Bi_op::Union{Integrated,MultiIntegrated}, Li_op::Union{I
         end
         return Spaces[iset]
     end
-
     A = spzeros(Float64, ndofs, ndofs)
-    
     # --- Ensamblaje Bilineal ---
     if res1 isa Integrated
         f_pure = res1.arg
@@ -225,7 +220,6 @@ function Linear_Problem(Bi_op::Union{Integrated,MultiIntegrated}, Li_op::Union{I
             A += Bilinear_Assembler(f_pure, Space)
         end
     end
-
     # --- Ensamblaje Lineal ---
     F = zeros(Float64, ndofs)
     if Li_op !== nothing
@@ -252,49 +246,119 @@ function Linear_Problem(Bi_op::Union{Integrated,MultiIntegrated}, Li_op::Union{I
         end
     end
 
-    # --- Condiciones de Dirichlet (Tu código original intacto) ---
     Ap = spzeros(Float64, ndofs, ndofs)
     Fp = zeros(Float64, ndofs)
-    
-    # Protección por si ensamblamos solo matriz de masa (A = 0)
-    α = isempty(A.nzval) ? 1e10 : maximum(abs, A) * 100
-
-    if !isempty(recipe.Dirichlet_Boundaries)
-        # Aseguramos que el grado de integración sea suficiente
-        dsets = map(recipe.Dirichlet_Boundaries) do tri
-            valid_deg = get_closest_degree(recipe.model, max_deg)
-            IntegrationSet(tri, valid_deg)
-        end
-        
-        if !haskey(Spaces, dsets[1])
-            Space_D = build_space(recipe, dsets)
-            for s in dsets
-                Spaces[s] = Space_D
-            end
-        else
-            Space_D = Spaces[dsets[1]]
-        end
-        
-        dΓd = Space_D.Measures
-        if !isempty(recipe.Dirichlet_Values)
-            for (diri, dΓc) in zip(recipe.Dirichlet_Values, dΓd)
-                # Creamos el integrando de penalización
-                f_pen = (D == 1) ? (δu -> α * diri * δu) : (δu -> δu ⋅ (diri * α))
-                f_pure_diri = (sa) -> begin
-                    m = f_pen(sa)
-                    if D == 1
-                        return m.phi
-                    end
-                    return SVector{D,Float64}(ntuple(i -> m[i].phi, Val(D)))
-                end
-                temp_space = FlexiSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes)
-                Fp .+= Linear_Assembler(f_pure_diri, temp_space)
+    min_detJ = Inf
+    dim_geo = size(recipe.model.x, 2)
+    for sp in values(Spaces)
+        for m in sp.Measures
+            if !isempty(m.gs)
+                min_detJ = min(min_detJ, minimum(view(m.gs, :, size(m.gs, 2))))
             end
         end
-        op_arg = (D == 1) ? ((δu, u) -> α * δu * u) : ((δu, u) -> α * (δu ⋅ u))
-        Ap = Bilinear_Assembler(op_arg, Space_D)
     end
+    h_elem = (min_detJ < Inf && min_detJ > 0) ? min_detJ^(1.0 / dim_geo) : 1.0
+    α_base = isempty(A.nzval) ? 1e10 : maximum(abs, A) * 100.0
+    α = α_base / h_elem
+    if !isempty(recipe.Dirichlet_Entities)
+        cont_tris = typeof(recipe.Dirichlet_Entities[1])[]
+        cont_vals = eltype(recipe.Dirichlet_Values)[]
+        cont_masks = Vector{Bool}[]
+        point_sets = PointSet[]
+        point_vals = eltype(recipe.Dirichlet_Values)[]
+        point_masks = Vector{Bool}[]
+        # 1. Clasificación al vuelo (0D vs Continuo) guardando la máscara correspondiente
+        for (tri, val, mask) in zip(recipe.Dirichlet_Entities, recipe.Dirichlet_Values, recipe.Dirichlet_Masks)
+            info, cat = get_entity_info(recipe.model, tri.tag)
+            if cat == :nodes
+                # Si el entity es un nodo o conjunto de nodos (devuelve Int o Matrix/Vector)
+                indices = info isa Int ? [info] : info
+                for idx in indices
+                    coords = recipe.model.x[idx:idx, :]
+                    push!(point_sets, PointSet(coords))
+                    push!(point_vals, val)
+                    push!(point_masks, mask)
+                end
+            else
+                push!(cont_tris, tri)
+                push!(cont_vals, val)
+                push!(cont_masks, mask)
+            end
+        end
+        # 2. Ensamblaje de Entidades Continuas
+        if !isempty(cont_tris)
+            dsets = map(cont_tris) do tri
+                valid_deg = get_closest_degree(recipe.model, max_deg)
+                IntegrationSet(tri, valid_deg)
+            end
 
+            if !haskey(Spaces, dsets[1])
+                Space_D = build_space(recipe, dsets)
+                for s in dsets
+                    Spaces[s] = Space_D
+                end
+            else
+                Space_D = Spaces[dsets[1]]
+            end
+            dΓd = Space_D.Measures
+            for (diri, dΓc, mask) in zip(cont_vals, dΓd, cont_masks)
+                coefs = ntuple(i -> mask[i] ? α : 0.0, Val(D))
+                temp_space = FlexiSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes)
+                if D == 1
+                    c = coefs[1]
+                    f_pen = δu -> c * diri * δu
+                    f_pure_diri = sa -> f_pen(sa).phi
+                    op_arg = (δu, u) -> c * δu * u
+                else
+                    Mα = SDiagonal{D,Float64}(coefs)
+                    f_pen = δu -> δu ⋅ (x -> begin
+                        dv = diri isa Function ? diri(x) : diri
+                        VectorField(ntuple(k -> Float64(dv[k]) * coefs[k], Val(D))...)
+                    end)
+                    f_pure_diri = sa -> begin
+                        m = f_pen(sa)
+                        SVector{D,Float64}(ntuple(i -> m[i].phi, Val(D)))
+                    end
+                    op_arg = (δu, u) -> Mα * (δu ⋅ u)
+                end
+                Fp .+= Linear_Assembler(f_pure_diri, temp_space)
+                Ap += Bilinear_Assembler(op_arg, temp_space)
+            end
+        end
+
+        # 3. Ensamblaje de Entidades Puntuales (Nodos)
+        if !isempty(point_sets)
+            for (pset, diri, mask) in zip(point_sets, point_vals, point_masks)
+                Space_Dp = get(Spaces, pset, nothing)
+                if Space_Dp === nothing
+                    Space_Dp = build_point_space(recipe, pset)
+                    Spaces[pset] = Space_Dp
+                end
+                dΓp = Space_Dp.Measures[1]
+                temp_space_p = FlexiSpace(Space_Dp.domain, Space_Dp.boundary, Space_Dp.Field_Type, [dΓp], Space_Dp.nnodes)
+                coefs = ntuple(i -> mask[i] ? α : 0.0, Val(D))
+                if D == 1
+                    c = coefs[1]
+                    f_pen_p = δu -> c * diri * δu
+                    f_pure_diri_p = sa -> f_pen_p(sa).phi
+                    op_arg_p = (δu, u) -> c * δu * u
+                else
+                    Mα = SDiagonal{D,Float64}(coefs)
+                    f_pen_p = δu -> δu ⋅ (x -> begin
+                        dv = diri isa Function ? diri(x) : diri
+                        VectorField(ntuple(k -> Float64(dv[k]) * coefs[k], Val(D))...)
+                    end)
+                    f_pure_diri_p = sa -> begin
+                        m = f_pen_p(sa)
+                        SVector{D,Float64}(ntuple(i -> m[i].phi, Val(D)))
+                    end
+                    op_arg_p = (δu, u) -> Mα * (δu ⋅ u)
+                end
+                Fp .+= Linear_Assembler(f_pure_diri_p, temp_space_p)
+                Ap += Bilinear_Assembler(op_arg_p, temp_space_p)
+            end
+        end
+    end
     return A + Ap, F + Fp, Spaces
 end
 
@@ -405,37 +469,131 @@ function Linear_Problem(Bi_op::Union{Integrated,MultiIntegrated}, Li_op::Union{I
             end
         end
     end
+
     Ap = spzeros(Float64, ndofs, ndofs)
     Fp = zeros(Float64, ndofs)
-    α = maximum(A) * 100
-    if !isempty(recipe.Dirichlet_Boundaries)
-        dsets = map(recipe.Dirichlet_Boundaries) do tri
-            valid_deg = get_closest_degree(recipe.model, max_deg)
-            IntegrationSet(tri, valid_deg)
-        end
-        Space_D = Spaces[dsets[1]]
-        dΓd = Space_D.Measures
-        if !isempty(recipe.Dirichlet_Values)
-            for (diri, dΓc) in zip(recipe.Dirichlet_Values, dΓd)
-                f_pen = (D == 1) ? (δu -> α * diri * δu) : (δu -> δu ⋅ (diri * α))
-                f_pure_diri = (sa) -> begin
-                    m = f_pen(sa)
-                    if D == 1
-                        return m.phi
-                    end
-                    return SVector{D,Float64}(ntuple(i -> m[i].phi, Val(D)))
-                end
-                temp_space = FlexiSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes)
-                Fp .+= Linear_Assembler(f_pure_diri, temp_space)
+    min_detJ = Inf
+    dim_geo = size(recipe.model.x, 2)
+    for sp in values(Spaces)
+        for m in sp.Measures
+            if !isempty(m.gs)
+                min_detJ = min(min_detJ, minimum(view(m.gs, :, size(m.gs, 2))))
             end
         end
-        op_arg = (D == 1) ? ((δu, u) -> α * δu * u) : ((δu, u) -> α * (δu ⋅ u))
-        Ap += Bilinear_Assembler(op_arg, Space_D)
+    end
+    h_elem = (min_detJ < Inf && min_detJ > 0) ? min_detJ^(1.0 / dim_geo) : 1.0
+    α_base = isempty(A.nzval) ? 1e10 : maximum(abs, A) * 100.0
+    α = α_base / h_elem
+    if !isempty(recipe.Dirichlet_Entities)
+        cont_tris = typeof(recipe.Dirichlet_Entities[1])[]
+        cont_vals = eltype(recipe.Dirichlet_Values)[]
+        cont_masks = Vector{Bool}[]
+
+        point_sets = PointSet[]
+        point_vals = eltype(recipe.Dirichlet_Values)[]
+        point_masks = Vector{Bool}[]
+
+        # 1. Clasificación al vuelo (0D vs Continuo) guardando la máscara correspondiente
+        for (tri, val, mask) in zip(recipe.Dirichlet_Entities, recipe.Dirichlet_Values, recipe.Dirichlet_Masks)
+            info, cat = get_entity_info(recipe.model, tri.tag)
+            if cat == :nodes
+                # Si el entity es un nodo o conjunto de nodos (devuelve Int o Matrix/Vector)
+                indices = info isa Int ? [info] : info
+                for idx in indices
+                    coords = recipe.model.x[idx:idx, :]
+                    push!(point_sets, PointSet(coords))
+                    push!(point_vals, val)
+                    push!(point_masks, mask)
+                end
+            else
+                push!(cont_tris, tri)
+                push!(cont_vals, val)
+                push!(cont_masks, mask)
+            end
+        end
+
+        # 2. Ensamblaje de Entidades Continuas
+        if !isempty(cont_tris)
+            dsets = map(cont_tris) do tri
+                valid_deg = get_closest_degree(recipe.model, max_deg)
+                IntegrationSet(tri, valid_deg)
+            end
+
+            if !haskey(Spaces, dsets[1])
+                Space_D = build_space(recipe, dsets)
+                for s in dsets
+                    Spaces[s] = Space_D
+                end
+            else
+                Space_D = Spaces[dsets[1]]
+            end
+
+            dΓd = Space_D.Measures
+            for (diri, dΓc, mask) in zip(cont_vals, dΓd, cont_masks)
+                coefs = ntuple(i -> mask[i] ? α : 0.0, Val(D))
+                temp_space = FlexiSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes)
+
+                if D == 1
+                    c = coefs[1]
+                    f_pen = δu -> c * diri * δu
+                    f_pure_diri = sa -> f_pen(sa).phi
+                    op_arg = (δu, u) -> c * δu * u
+                else
+                    Mα = SDiagonal{D,Float64}(coefs)
+                    f_pen = δu -> δu ⋅ (x -> begin
+                        dv = diri isa Function ? diri(x) : diri
+                        VectorField(ntuple(k -> Float64(dv[k]) * coefs[k], Val(D))...)
+                    end)
+                    f_pure_diri = sa -> begin
+                        m = f_pen(sa)
+                        SVector{D,Float64}(ntuple(i -> m[i].phi, Val(D)))
+                    end
+                    op_arg = (δu, u) -> Mα * (δu ⋅ u)
+                end
+                Fp .+= Linear_Assembler(f_pure_diri, temp_space)
+                Ap += Bilinear_Assembler(op_arg, temp_space)
+            end
+        end
+
+        # 3. Ensamblaje de Entidades Puntuales (Nodos)
+        if !isempty(point_sets)
+            for (pset, diri, mask) in zip(point_sets, point_vals, point_masks)
+                Space_Dp = get(Spaces, pset, nothing)
+                if Space_Dp === nothing
+                    Space_Dp = build_point_space(recipe, pset)
+                    Spaces[pset] = Space_Dp
+                end
+                dΓp = Space_Dp.Measures[1]
+                temp_space_p = FlexiSpace(Space_Dp.domain, Space_Dp.boundary, Space_Dp.Field_Type, [dΓp], Space_Dp.nnodes)
+
+                coefs = ntuple(i -> mask[i] ? α : 0.0, Val(D))
+
+                if D == 1
+                    c = coefs[1]
+                    f_pen_p = δu -> c * diri * δu
+                    f_pure_diri_p = sa -> f_pen_p(sa).phi
+                    op_arg_p = (δu, u) -> c * δu * u
+                else
+                    Mα = SDiagonal{D,Float64}(coefs)
+                    f_pen_p = δu -> δu ⋅ (x -> begin
+                        dv = diri isa Function ? diri(x) : diri
+                        VectorField(ntuple(k -> Float64(dv[k]) * coefs[k], Val(D))...)
+                    end)
+                    f_pure_diri_p = sa -> begin
+                        m = f_pen_p(sa)
+                        SVector{D,Float64}(ntuple(i -> m[i].phi, Val(D)))
+                    end
+                    op_arg_p = (δu, u) -> Mα * (δu ⋅ u)
+                end
+                Fp .+= Linear_Assembler(f_pure_diri_p, temp_space_p)
+                Ap += Bilinear_Assembler(op_arg_p, temp_space_p)
+            end
+        end
     end
     return A + Ap, F + Fp, Spaces
 end
 
-Linear_Problem(Bi_op::Union{Integrated,MultiIntegrated}, recipe::ApproxSpace, Spaces::Dict{IntegrationSet,FlexiSpace}) = Linear_Problem(Bi_op, nothing, recipe, Spaces)
+Linear_Problem(Bi_op::Union{Integrated,MultiIntegrated}, recipe::ApproxSpace, Spaces::Dict{Union{IntegrationSet,PointSet},FlexiSpace}) = Linear_Problem(Bi_op, nothing, recipe, Spaces)
 
 function Reassemble_Vector!(Li_op::Union{Integrated,MultiIntegrated}, recipe::ApproxSpace, op)
     A, _, Spaces = op
@@ -467,26 +625,108 @@ function Reassemble_Vector!(Li_op::Union{Integrated,MultiIntegrated}, recipe::Ap
         end
     end
     Fp = zeros(Float64, ndofs)
-    α = maximum(A) * 100
-    if !isempty(recipe.Dirichlet_Boundaries)
-        dsets = map(recipe.Dirichlet_Boundaries) do tri
-            valid_deg = get_closest_degree(recipe.model, max_deg)
-            IntegrationSet(tri, valid_deg)
+
+    min_detJ = Inf
+    dim_geo = size(recipe.model.x, 2)
+    for sp in values(Spaces)
+        for m in sp.Measures
+            if !isempty(m.gs)
+                min_detJ = min(min_detJ, minimum(view(m.gs, :, size(m.gs, 2))))
+            end
         end
-        Space_D = Spaces[dsets[1]]
-        dΓd = Space_D.Measures
-        if !isempty(recipe.Dirichlet_Values)
-            for (diri, dΓc) in zip(recipe.Dirichlet_Values, dΓd)
-                f_pen = (D == 1) ? (δu -> α * diri * δu) : (δu -> δu ⋅ (diri * α))
-                f_pure_diri = (sa) -> begin
-                    m = f_pen(sa)
-                    if D == 1
-                        return m.phi
-                    end
-                    return SVector{D,Float64}(ntuple(i -> m[i].phi, Val(D)))
+    end
+    h_elem = (min_detJ < Inf && min_detJ > 0) ? min_detJ^(1.0 / dim_geo) : 1.0
+    α_base = isempty(A.nzval) ? 1e10 : maximum(abs, A) * 100.0
+    α = α_base / h_elem
+    if !isempty(recipe.Dirichlet_Entities)
+        cont_tris = typeof(recipe.Dirichlet_Entities[1])[]
+        cont_vals = eltype(recipe.Dirichlet_Values)[]
+        cont_masks = Vector{Bool}[]
+
+        point_sets = PointSet[]
+        point_vals = eltype(recipe.Dirichlet_Values)[]
+        point_masks = Vector{Bool}[]
+
+        # 1. Clasificación al vuelo (0D vs Continuo) guardando la máscara correspondiente
+        for (tri, val, mask) in zip(recipe.Dirichlet_Entities, recipe.Dirichlet_Values, recipe.Dirichlet_Masks)
+            info, cat = get_entity_info(recipe.model, tri.tag)
+            if cat == :nodes
+                # Si el entity es un nodo o conjunto de nodos (devuelve Int o Matrix/Vector)
+                indices = info isa Int ? [info] : info
+                for idx in indices
+                    coords = recipe.model.x[idx:idx, :]
+                    push!(point_sets, PointSet(coords))
+                    push!(point_vals, val)
+                    push!(point_masks, mask)
                 end
+            else
+                push!(cont_tris, tri)
+                push!(cont_vals, val)
+                push!(cont_masks, mask)
+            end
+        end
+
+        # 2. Ensamblaje de Entidades Continuas
+        if !isempty(cont_tris)
+            dsets = map(cont_tris) do tri
+                valid_deg = get_closest_degree(recipe.model, max_deg)
+                IntegrationSet(tri, valid_deg)
+            end
+            if !haskey(Spaces, dsets[1])
+                Space_D = build_space(recipe, dsets)
+                for s in dsets
+                    Spaces[s] = Space_D
+                end
+            else
+                Space_D = Spaces[dsets[1]]
+            end
+            dΓd = Space_D.Measures
+            for (diri, dΓc, mask) in zip(cont_vals, dΓd, cont_masks)
+                coefs = ntuple(i -> mask[i] ? α : 0.0, Val(D))
                 temp_space = FlexiSpace(Space_D.domain, Space_D.boundary, Space_D.Field_Type, [dΓc], Space_D.nnodes)
+                if D == 1
+                    c = coefs[1]
+                    f_pen = δu -> c * diri * δu
+                    f_pure_diri = sa -> f_pen(sa).phi
+                else
+                    f_pen = δu -> δu ⋅ (x -> begin
+                        dv = diri isa Function ? diri(x) : diri
+                        VectorField(ntuple(k -> Float64(dv[k]) * coefs[k], Val(D))...)
+                    end)
+                    f_pure_diri = sa -> begin
+                        m = f_pen(sa)
+                        SVector{D,Float64}(ntuple(i -> m[i].phi, Val(D)))
+                    end
+                end
                 Fp .+= Linear_Assembler(f_pure_diri, temp_space)
+            end
+        end
+        # 3. Ensamblaje de Entidades Puntuales (Nodos)
+        if !isempty(point_sets)
+            for (pset, diri, mask) in zip(point_sets, point_vals, point_masks)
+                Space_Dp = get(Spaces, pset, nothing)
+                if Space_Dp === nothing
+                    Space_Dp = build_point_space(recipe, pset)
+                    Spaces[pset] = Space_Dp
+                end
+                dΓp = Space_Dp.Measures[1]
+                temp_space_p = FlexiSpace(Space_Dp.domain, Space_Dp.boundary, Space_Dp.Field_Type, [dΓp], Space_Dp.nnodes)
+                coefs = ntuple(i -> mask[i] ? α : 0.0, Val(D))
+                if D == 1
+                    c = coefs[1]
+                    f_pen_p = δu -> c * diri * δu
+                    f_pure_diri_p = sa -> f_pen_p(sa).phi
+                else
+                    f_pen_p = δu -> δu ⋅ (x -> begin
+                        dv = diri isa Function ? diri(x) : diri
+                        VectorField(ntuple(k -> Float64(dv[k]) * coefs[k], Val(D))...)
+                    end)
+                    f_pure_diri_p = sa -> begin
+                        m = f_pen_p(sa)
+                        SVector{D,Float64}(ntuple(i -> m[i].phi, Val(D)))
+                    end
+                end
+                Fp .+= Linear_Assembler(f_pure_diri_p, temp_space_p)
             end
         end
     end
@@ -494,75 +734,132 @@ function Reassemble_Vector!(Li_op::Union{Integrated,MultiIntegrated}, recipe::Ap
     return (A, F_final, Spaces)
 end
 
-@inline function _get_arg(s::SingleFlexiMeasure{DG}, ::Val{D}) where {DG, D}
+function Assemble_Vector(Li_op::Union{Integrated,MultiIntegrated}, recipe::ApproxSpace, Spaces::Dict{<:Union{IntegrationSet,PointSet},<:FlexiSpace})
+    D = field_dim(recipe.Field_Type)
+    is_p0 = (recipe.order == 0)
+    target_nnodes = is_p0 ? recipe.model.ncells : recipe.model.nnodes
+    ndofs = D * target_nnodes
+    F = zeros(Float64, ndofs)
+    terms = Li_op isa Integrated ? (Li_op,) : Li_op.terms
+
+    function extract_phi(m, dim)
+        return dim == 1 ? m.phi : SVector{dim,Float64}(ntuple(i -> m[i].phi, Val(dim)))
+    end
+
+    for term in terms
+        iset = term.b
+        f_pure = (sa) -> extract_phi(term.arg(sa), D)
+        F .+= Linear_Assembler(f_pure, Spaces[iset])
+    end
+    return F
+end
+
+function Assemble_Vector(Li_op::Union{Integrated,MultiIntegrated}, recipe::ApproxSpace, space::FlexiSpace)
+    terms = Li_op isa Integrated ? (Li_op,) : Li_op.terms
+    # Mapea todas las regiones de integración de los términos al FlexiSpace provisto
+    spaces_dict = Dict{Union{IntegrationSet,PointSet},typeof(space)}(term.b => space for term in terms)
+    return Assemble_Vector(Li_op, recipe, spaces_dict)
+end
+
+function Assemble_Vector(Li_op::Union{Integrated,MultiIntegrated}, recipe::ApproxSpace)
+    terms = Li_op isa Integrated ? (Li_op,) : Li_op.terms
+    Spaces = Dict{Union{IntegrationSet,PointSet},FlexiSpace}()
+    for term in terms
+        iset = term.b
+        if !haskey(Spaces, iset)
+            sp = iset isa PointSet ? build_point_space(recipe, iset) : build_space(recipe, [iset])
+            if (recipe.order == 0) && sp.nnodes != recipe.model.ncells
+                sp = FlexiSpace(sp.domain, sp.boundary, sp.Field_Type, sp.Measures, recipe.model.ncells)
+            end
+            Spaces[iset] = sp
+        end
+    end
+    F = Assemble_Vector(Li_op, recipe, Spaces)
+    return F, Spaces
+end
+
+@inline function _get_arg(s::SingleFlexiMeasure{DG}, ::Val{D}) where {DG,D}
     if D == 1
         return s
     elseif D == 2
-        return VectorField{2, typeof(s)}((s, s))
+        return VectorField{2,typeof(s)}((s, s))
     elseif D == 3
-        return VectorField{3, typeof(s)}((s, s, s))
+        return VectorField{3,typeof(s)}((s, s, s))
     else
         return VectorField(ntuple(_ -> s, Val(D))...)
     end
 end
 
 @inline function _extract_val(res, i, j, Di, Dj)
-    if Di == 1 && Dj == 1; return res
-    elseif Di > 1 && Dj == 1; return res[i]
-    elseif Di == 1 && Dj > 1; return res[j]
-    else; return res[i, j]; end
+    if Di == 1 && Dj == 1
+        return res
+    elseif Di > 1 && Dj == 1
+        return res[i]
+    elseif Di == 1 && Dj > 1
+        return res[j]
+    else
+        return res[i, j]
+    end
 end
 
-struct BlockEvaluator{F, N, I, J} f::F end
-struct VectorBlockEvaluator{F, N, I} f::F end
+struct BlockEvaluator{F,N,I,J}
+    f::F
+end
+struct VectorBlockEvaluator{F,N,I}
+    f::F
+end
 
-@inline (ev::VectorBlockEvaluator{F, N, I})(mi) where {F, N, I} = 
+@inline (ev::VectorBlockEvaluator{F,N,I})(mi) where {F,N,I} =
     ev.f(ntuple(k -> k == I ? mi : nothing, Val(N)))
 
-@inline (ev::BlockEvaluator{F, N, I, J})(mi, mj) where {F, N, I, J} = 
+@inline (ev::BlockEvaluator{F,N,I,J})(mi, mj) where {F,N,I,J} =
     ev.f(ntuple(k -> k == I ? mi : nothing, Val(N)), ntuple(k -> k == J ? mj : nothing, Val(N)))
 
 function Bilinear_Assembler(f_pure::F, MS::MultiApproxSpace, iset::IntegrationSet, cache_func) where {F}
     N = length(MS.spaces)
     ndofs = MS.ndofs
-    active_blocks = Vector{Tuple{Int, Int, FlexiSpace, FlexiSpace, FlexiMeasure, FlexiMeasure, Matrix{Float64}, Int, Int}}()
+    active_blocks = Vector{Tuple{Int,Int,FlexiSpace,FlexiSpace,FlexiMeasure,FlexiMeasure,Matrix{Float64},Int,Int}}()
     total_length = 0
     for i in 1:N, j in 1:N
         sp_i, sp_j = cache_func(i, iset), cache_func(j, iset)
         Di, Dj = field_dim(sp_i.Field_Type), field_dim(sp_j.Field_Type)
         dummy_i = _get_arg(SingleFlexiMeasure(0.0, zero(SVector{2,Float64}), zero(SVector{2,Float64}), 1), Val(Di))
         dummy_j = _get_arg(SingleFlexiMeasure(0.0, zero(SVector{2,Float64}), zero(SVector{2,Float64}), 1), Val(Dj))
-        if f_pure(ntuple(k->k==i ? dummy_i : nothing, Val(N)), ntuple(k->k==j ? dummy_j : nothing, Val(N))) !== nothing
+        if f_pure(ntuple(k -> k == i ? dummy_i : nothing, Val(N)), ntuple(k -> k == j ? dummy_j : nothing, Val(N))) !== nothing
             Sh_i = Flexi_Measure(sp_i.Measures, sp_i)
             Sh_j = Flexi_Measure(sp_j.Measures, sp_j)
-            gs_block = merge(sp_i.Measures).gs 
+            gs_block = merge(sp_i.Measures).gs
             blk_len = sum(ind -> length(Sh_i.DOM[ind]) * length(Sh_j.DOM[ind]) * Di * Dj, 1:length(Sh_i.DOM))
             total_length += blk_len
             push!(active_blocks, (i, j, sp_i, sp_j, Sh_i, Sh_j, gs_block, MS.offsets[i], MS.offsets[j]))
         end
     end
-    row = Vector{Int}(undef, total_length); col = Vector{Int}(undef, total_length); val = Vector{Float64}(undef, total_length)
+    row = Vector{Int}(undef, total_length)
+    col = Vector{Int}(undef, total_length)
+    val = Vector{Float64}(undef, total_length)
     pos = 1
     for blk in active_blocks
-    (i, j, sp_i, sp_j, Sh_i, Sh_j, gs_block, off_i, off_j) = blk
-    Di = field_dim(sp_i.Field_Type)
-    Dj = field_dim(sp_j.Field_Type)
-    DG = size(gs_block, 2) - 2
-    
-    pos = __fill_block_indices!(row, col, val, pos, f_pure, sp_i, sp_j, Sh_i, Sh_j, gs_block, 
-                                Val(i), Val(j), off_i, off_j, Val(N), 
-                                Val(Di), Val(Dj), Val(DG))
+        (i, j, sp_i, sp_j, Sh_i, Sh_j, gs_block, off_i, off_j) = blk
+        Di = field_dim(sp_i.Field_Type)
+        Dj = field_dim(sp_j.Field_Type)
+        DG = size(gs_block, 2) - 2
+
+        pos = __fill_block_indices!(row, col, val, pos, f_pure, sp_i, sp_j, Sh_i, Sh_j, gs_block,
+            Val(i), Val(j), off_i, off_j, Val(N),
+            Val(Di), Val(Dj), Val(DG))
     end
     if pos <= total_length
-        resize!(row, pos - 1); resize!(col, pos - 1); resize!(val, pos - 1)
+        resize!(row, pos - 1)
+        resize!(col, pos - 1)
+        resize!(val, pos - 1)
     end
     return sparse(row, col, val, ndofs, ndofs)
 end
 
-function __fill_block_indices!(row, col, val, pos, f_pure::F, sp_i, sp_j, Sh_i, Sh_j, gs_block, 
-                               ::Val{I}, ::Val{J}, off_i, off_j, ::Val{N}, 
-                               ::Val{Di}, ::Val{Dj}, ::Val{DG}) where {F, I, J, N, Di, Dj, DG}
-    evaluator = BlockEvaluator{F, N, I, J}(f_pure)
+function __fill_block_indices!(row, col, val, pos, f_pure::F, sp_i, sp_j, Sh_i, Sh_j, gs_block,
+    ::Val{I}, ::Val{J}, off_i, off_j, ::Val{N},
+    ::Val{Di}, ::Val{Dj}, ::Val{DG}) where {F,I,J,N,Di,Dj,DG}
+    evaluator = BlockEvaluator{F,N,I,J}(f_pure)
     PHI_i, DPHI_i, DOM_i = Sh_i.PHI, Sh_i.DPHI, Sh_i.DOM
     PHI_j, DPHI_j, DOM_j = Sh_j.PHI, Sh_j.DPHI, Sh_j.DOM
     @inbounds for ind in 1:length(DOM_i)
@@ -577,7 +874,7 @@ function __fill_block_indices!(row, col, val, pos, f_pure::F, sp_i, sp_j, Sh_i, 
             for b in 1:length(d_j)
                 arg_j = _get_arg(SingleFlexiMeasure(PHI_j[ind][b], DPHI_j[ind][b], coord_v, ind), Val(Dj))
                 res = evaluator(arg_i, arg_j)
-                res === nothing && continue                  
+                res === nothing && continue
                 c_base = off_j + (d_j[b] - 1) * Dj
                 for jc in 1:Dj
                     curr_col = c_base + jc
@@ -608,12 +905,12 @@ function Global_Linear_Assembler!(F_glob, f_pure::F, MS::MultiApproxSpace, iset:
     end
 end
 
-function __fill_vector_core!(F_glob, f_pure::F, Sh_i, off_i, Di, ::Val{I}, ::Val{N}) where {F, I, N}
-    evaluator = VectorBlockEvaluator{F, N, I}(f_pure)
-    gs = Sh_i.gs; DG = size(gs, 2) - 2
+function __fill_vector_core!(F_glob, f_pure::F, Sh_i, off_i, Di, ::Val{I}, ::Val{N}) where {F,I,N}
+    evaluator = VectorBlockEvaluator{F,N,I}(f_pure)
+    gs = Sh_i.gs
+    DG = size(gs, 2) - 2
     @inbounds for ind in 1:length(Sh_i.DOM)
         wj = gs[ind, end] * gs[ind, end-1]
-        #coord_v = SVector{DG, Float64}(@view gs[ind, 1:DG])
         coord_v = SVector{DG,Float64}(ntuple(i -> gs[ind, i], Val(DG)))
         dom_i = Sh_i.DOM[ind]
         for a in 1:length(dom_i)
@@ -622,7 +919,7 @@ function __fill_vector_core!(F_glob, f_pure::F, Sh_i, off_i, Di, ::Val{I}, ::Val
             res === nothing && continue
             for ir in 1:Di
                 val = (Di == 1) ? res.phi : res[ir].phi
-                F_glob[off_i + (dom_i[a] - 1) * Di + ir] += val * wj
+                F_glob[off_i+(dom_i[a]-1)*Di+ir] += val * wj
             end
         end
     end
@@ -632,20 +929,24 @@ function Linear_Problem(Bi_op::Union{Integrated,MultiIntegrated}, Li_op::Union{I
     N = length(MS.spaces)
     ndofs = MS.ndofs
     max_deg = 1
-    Spaces_Cache = Dict{Tuple{Int, IntegrationSet}, FlexiSpace}()
+
+    Spaces_Cache = Dict{Tuple{Int,IntegrationSet},FlexiSpace}()
     function get_cached_space(idx, iset)
         return get!(Spaces_Cache, (idx, iset)) do
             build_space(MS.spaces[idx], [iset])
         end
     end
+
     A = spzeros(Float64, ndofs, ndofs)
     F = zeros(Float64, ndofs)
+
     bi_terms = (Bi_op isa Integrated) ? [Bi_op] : Bi_op.terms
     for term in bi_terms
         iset = term.b
         max_deg = max(max_deg, iset.degree)
         A += Bilinear_Assembler(term.arg, MS, iset, get_cached_space)
     end
+
     if Li_op !== nothing
         li_terms = (Li_op isa Integrated) ? [Li_op] : Li_op.terms
         for term in li_terms
@@ -654,35 +955,122 @@ function Linear_Problem(Bi_op::Union{Integrated,MultiIntegrated}, Li_op::Union{I
             Global_Linear_Assembler!(F, term.arg, MS, iset, get_cached_space)
         end
     end
-    α = isempty(A.nzval) ? 1e10 : maximum(abs, A) * 100
+
+    min_detJ = Inf
+    dim_geo = size(MS.spaces[1].model.x, 2)
+    for sp in values(Spaces_Cache)
+        for m in sp.Measures
+            if !isempty(m.gs)
+                min_detJ = min(min_detJ, minimum(view(m.gs, :, size(m.gs, 2))))
+            end
+        end
+    end
+    h_elem = (min_detJ < Inf && min_detJ > 0) ? min_detJ^(1.0 / dim_geo) : 1.0
     for i in 1:N
         recipe = MS.spaces[i]
         off = MS.offsets[i]
+        D = field_dim(recipe.Field_Type)
+        ndofs_field = (recipe.order == 0) ? (recipe.model.ncells * D) : (recipe.model.nnodes * D)
+        A_block = A[off+1:off+ndofs_field, off+1:off+ndofs_field]
+        α_base = isempty(A_block.nzval) ? 1e10 : maximum(abs, A_block) * 100.0
+        α = α_base / h_elem
+
         if recipe.constraint == :ZeroMean
-            A[off + 1, off + 1] += α
+            A[off+1, off+1] += α
         end
-        if !isempty(recipe.Dirichlet_Boundaries)
-            off = MS.offsets[i]
-            D = field_dim(recipe.Field_Type)
-            dsets = map(recipe.Dirichlet_Boundaries) do tri
-            valid_deg = get_closest_degree(recipe.model, max_deg)
-            IntegrationSet(tri, valid_deg)
+        if !isempty(recipe.Dirichlet_Entities)
+            cont_tris = typeof(recipe.Dirichlet_Entities[1])[]
+            cont_vals = eltype(recipe.Dirichlet_Values)[]
+            cont_masks = Vector{Bool}[]
+            point_sets = PointSet[]
+            point_vals = eltype(recipe.Dirichlet_Values)[]
+            point_masks = Vector{Bool}[]
+
+            for (tri, val, mask) in zip(recipe.Dirichlet_Entities, recipe.Dirichlet_Values, recipe.Dirichlet_Masks)
+                info, cat = get_entity_info(recipe.model, tri.tag)
+                if cat == :nodes
+                    indices = info isa Int ? [info] : info
+                    for idx in indices
+                        coords = recipe.model.x[idx:idx, :]
+                        push!(point_sets, PointSet(coords))
+                        push!(point_vals, val)
+                        push!(point_masks, mask)
+                    end
+                else
+                    push!(cont_tris, tri)
+                    push!(cont_vals, val)
+                    push!(cont_masks, mask)
+                end
             end
-            Space_D = build_space(recipe, dsets)
-            op_arg = (D == 1) ? ((δu, u) -> α * δu * u) : ((δu, u) -> α * (δu ⋅ u))
-            Ap_local = Bilinear_Assembler(op_arg, Space_D) 
-            I, J, V = findnz(Ap_local)
-            A += sparse(I .+ off, J .+ off, V, ndofs, ndofs)
-            if !isempty(recipe.Dirichlet_Values)
-                for (diri, dΓc) in zip(recipe.Dirichlet_Values, Space_D.Measures)
-                    f_pen = (D == 1) ? (v -> α * diri * v) : (v -> v ⋅ (diri * α))
-                    f_pure_diri = (v) -> begin
-                        m = f_pen(v)
-                        return (D == 1) ? m.phi : SVector{D,Float64}(ntuple(k -> m[k].phi, Val(D)))
-                    end             
+
+            if !isempty(cont_tris)
+                dsets = map(cont_tris) do tri
+                    valid_deg = get_closest_degree(recipe.model, max_deg)
+                    IntegrationSet(tri, valid_deg)
+                end
+                Space_D = build_space(recipe, dsets)
+
+                for (diri, dΓc, mask) in zip(cont_vals, Space_D.Measures, cont_masks)
+                    coefs = ntuple(k -> mask[k] ? α : 0.0, Val(D))
                     temp_sp = FlexiSpace(Space_D.domain, Space_D.boundary, recipe.Field_Type, [dΓc], Space_D.nnodes)
+                    if D == 1
+                        c = coefs[1]
+                        op_arg = (δu, u) -> c * δu * u
+                        f_pen = v -> c * diri * v
+                        f_pure_diri = v -> f_pen(v).phi
+                    else
+                        Mα = SDiagonal{D,Float64}(coefs)
+                        op_arg = (δu, u) -> Mα * (δu ⋅ u)
+                        f_pen = v -> v ⋅ (x -> begin
+                            dv = diri isa Function ? diri(x) : diri
+                            VectorField(ntuple(k -> Float64(dv[k]) * coefs[k], Val(D))...)
+                        end)
+                        f_pure_diri = v -> begin
+                            m = f_pen(v)
+                            SVector{D,Float64}(ntuple(k -> m[k].phi, Val(D)))
+                        end
+                    end
+                    Ap_local = Bilinear_Assembler(op_arg, temp_sp)
+                    I_idx, J_idx, V_val = findnz(Ap_local)
+                    A += sparse(I_idx .+ off, J_idx .+ off, V_val, ndofs, ndofs)
+
                     F_local = Linear_Assembler(f_pure_diri, temp_sp)
-                    F[off+1 : off+length(F_local)] .+= F_local
+                    F[off+1:off+length(F_local)] .+= F_local
+                end
+            end
+
+            if !isempty(point_sets)
+                Spaces_P_cache = Dict{PointSet,Any}()
+                for (pset, diri, mask) in zip(point_sets, point_vals, point_masks)
+                    Space_Dp = get!(Spaces_P_cache, pset) do
+                        build_point_space(recipe, pset)
+                    end
+                    dΓp = Space_Dp.Measures[1]
+                    temp_space_p = FlexiSpace(Space_Dp.domain, Space_Dp.boundary, recipe.Field_Type, [dΓp], Space_Dp.nnodes)
+                    coefs = ntuple(k -> mask[k] ? α : 0.0, Val(D))
+                    if D == 1
+                        c = coefs[1]
+                        op_arg_p = (δu, u) -> c * δu * u
+                        f_pen_p = v -> c * diri * v
+                        f_pure_diri_p = v -> f_pen_p(v).phi
+                    else
+                        Mα = SDiagonal{D,Float64}(coefs)
+                        op_arg_p = (δu, u) -> Mα * (δu ⋅ u)
+                        f_pen_p = v -> v ⋅ (x -> begin
+                            dv = diri isa Function ? diri(x) : diri
+                            VectorField(ntuple(k -> Float64(dv[k]) * coefs[k], Val(D))...)
+                        end)
+                        f_pure_diri_p = v -> begin
+                            m = f_pen_p(v)
+                            SVector{D,Float64}(ntuple(k -> m[k].phi, Val(D)))
+                        end
+                    end
+                    Ap_local = Bilinear_Assembler(op_arg_p, Space_Dp)
+                    I_idx, J_idx, V_val = findnz(Ap_local)
+                    A += sparse(I_idx .+ off, J_idx .+ off, V_val, ndofs, ndofs)
+
+                    F_local = Linear_Assembler(f_pure_diri_p, temp_space_p)
+                    F[off+1:off+length(F_local)] .+= F_local
                 end
             end
         end

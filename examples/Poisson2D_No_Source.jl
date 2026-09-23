@@ -23,8 +23,8 @@ ngpts = 3
 Γ3 = Triangulation(model, "Right");
 Γ4 = Triangulation(model, "Top");
 dΩ = IntegrationSet(Ω, ngpts);
-Tspace = ApproxSpace(model, [Ω, Γ1, Γ2, Γ3, Γ4],Float64; dmax, shape=:rectangular, dm_map=dm_clustered, method=:EFG, technique=:LME,
-Dirichlet_Boundaries=[Γ1, Γ2, Γ3, Γ4], Dirichlet_Values=[0.0,x->5*x[1], 5.0, x->5*x[1]]);
+Tspace = ApproxSpace(model, [Ω, Γ1, Γ2, Γ3, Γ4],Float64; dmax, shape=:rectangular, dm_map=dm_clustered, method=:EFG, technique=:LME, gamma=5.0,
+Dirichlet_Entities=[Γ1, Γ2, Γ3, Γ4], Dirichlet_Values=[0.0,x->5*x[1], 5.0, x->5*x[1]]);
 const k = 1.0
 const v(x) = VectorField(-100.0 * (x[2] - 0.5), 100.0 * (x[1] - 0.5))
 @WeakForm a(δT, T) = ∫(∇(δT) ⋅ (k * ∇(T)) + δT * (v ⋅ ∇(T)))dΩ

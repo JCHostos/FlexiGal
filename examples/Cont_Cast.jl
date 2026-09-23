@@ -4,7 +4,6 @@ Domain = (0.16, 1.0)
 Divisions = (36, 180)
 dmax = [2.0, 1.15]
 model = create_model(Domain, Divisions);
-dm = Influence_Domains(model, Domain, Divisions, dmax);
 ngpts = 3;
 const Tc = 1803.0;
 const vc = 0.03;
@@ -46,9 +45,9 @@ end
 Γᵣ = Triangulation(model, "Right");
 dΩ = IntegrationSet(Ω, ngpts);
 dΓᵣ = IntegrationSet(Γᵣ, ngpts);
-Tspace = ApproxSpace(model, [Ω, Γb, Γᵣ], Float64; dmax, method=:EFG, technique =:MK,
-    Dirichlet_Boundaries=[Γb], Dirichlet_Values=[Tc]);
-fspace = ApproxSpace(model, [Ω, Γb, Γᵣ], Float64; dmax, method =:EFG,technique =:MK);
+Tspace = ApproxSpace(model, [Ω, Γb, Γᵣ], Float64; dmax, method=:EFG, technique =:LME,gamma=5.5,
+    Dirichlet_Entities=[Γb], Dirichlet_Values=[Tc]);
+fspace = ApproxSpace(model, [Ω, Γb, Γᵣ], Float64; dmax, method =:EFG,technique =:LME,gamma=5.5);
 const v = VectorField(0.0, vc)
 r(x) = x[1]
 @WeakForm a(δT, T) = ∫(∇(δT) ⋅ (kₛ * ∇(T) * r) + δT * (ρ * cpₛ * v ⋅ ∇(T) * r))dΩ + ∫(δT * (hₛ * T * r))dΓᵣ

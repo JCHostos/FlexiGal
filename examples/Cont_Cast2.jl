@@ -1,13 +1,13 @@
 using FlexiGal
 using LinearAlgebra
-Domain = (0.16, 1.0); Divisions = (36, 120)
+Domain = (0.16, 1.0); Divisions = (36, 180)
 ε = 3.0
 clustering_right(x) = [0.16 * tanh(x[1] / 0.16 * ε) / tanh(ε), x[2]]
 
 dm_clustered(x) = [ε / (tanh(ε) * cosh(x[1] / 0.16 * ε)^2), 1.0]
 
 model = create_model(Domain, Divisions; map=clustering_right);
-dmax = [1.75, 1.75];
+dmax = [2.0, 1.15];
 ngpts = 3;
 
 const Tc = 1803.0; const vc = 0.03; const Tw = 303.0; const h = 500;
@@ -26,10 +26,10 @@ set_tag!(model, shell; name="Shell"); set_tag!(model, bulk; name="Bulk");
 dΩ_fem = IntegrationSet(Ω_fem, 2); dΩ_mk = IntegrationSet(Ω_mk, ngpts);
 dΓᵣ = IntegrationSet(Γᵣ, ngpts);
 
-Tspace = ApproxSpace(model, [Ω_fem, Ω_mk, Γb, Γᵣ], Float64; dmax,dm_map=dm_clustered, method=[:FEM,:EFG,:FEM,:EFG], technique =:MK,
-    Dirichlet_Boundaries=[Γb], Dirichlet_Values=[Tc]);
+Tspace = ApproxSpace(model, [Ω_fem, Ω_mk, Γb, Γᵣ], Float64; dmax,dm_map=dm_clustered, method=[:FEM,:EFG,:FEM,:EFG], technique =:LME,gamma=5.5,
+    Dirichlet_Entities=[Γb], Dirichlet_Values=[Tc]);
 
-fspace = ApproxSpace(model, [Ω_fem, Ω_mk, Γb, Γᵣ], Float64; dmax, dm_map=dm_clustered, method=[:FEM,:EFG,:FEM,:EFG], technique =:MK);
+fspace = ApproxSpace(model, [Ω_fem, Ω_mk, Γb, Γᵣ], Float64; dmax, dm_map=dm_clustered, method=[:FEM,:EFG,:FEM,:EFG], technique =:LME,gamma=5.5);
 
 const v = VectorField(0.0, vc); r(x) = x[1];
 

@@ -3,12 +3,12 @@ using LinearAlgebra
 using DelimitedFiles
 Lx, Ly, Lz = 1.73/2, 0.66/2, 2.5
 Domain = (Lx,Ly,Lz); Divisions = (50, 28, 72)
-conn=readdlm("/home/hostos/Documents/FlexiGal/examples/connDC.txt",Int);
-xyz=readdlm("/home/hostos/Documents/FlexiGal/examples/xyzDC.txt",Float64);
+conn=readdlm("FlexiGal/examples/connDC.txt",Int);
+xyz=readdlm("FlexiGal/examples/xyzDC.txt",Float64);
 model = create_model(xyz,conn);
 model.domain = Domain; model.divisions = Divisions;
-dmax = [1.5, 1.5, 1.05];
-ngpts = 3;
+dmax = [1.35, 1.35, 1.05];
+ngpts = 2;
 const Tc = 962.0; const vc = 0.001; const Tw = 303.0;
 const kₛ = 231.0; const kₗ = 90.7; const cpₛ = 900.0; const cpₗ = 1300.0;
 const ρₛ = 2700.0; const ρₗ = 2368.0; const Hf = 396400.0; const Tₗ = 930; const Tₛ = 919;
@@ -45,13 +45,13 @@ set_boundary_tag!(model, Front; name="Front");
 Ω_fem = Triangulation(model, "FEM"); Ω_mk = Triangulation(model, "MK");
 Γb = Triangulation(model, "Bottom"); Γr = Triangulation(model, "Right");
 Γf = Triangulation(model, "Front");
-dΩ_fem = IntegrationSet(Ω_fem, ngpts-1); dΩ_mk = IntegrationSet(Ω_mk, ngpts);
+dΩ_fem = IntegrationSet(Ω_fem, ngpts); dΩ_mk = IntegrationSet(Ω_mk, ngpts);
 dΓr = IntegrationSet(Γr, ngpts); dΓf = IntegrationSet(Γf, ngpts);
 
-Tspace = ApproxSpace(model, [Ω_fem, Ω_mk, Γb, Γr, Γf], Float64; dmax, method=[:FEM,:EFG,:FEM,:FEM,:FEM], technique =:MK,
-    Dirichlet_Boundaries=[Γb], Dirichlet_Values=[Tc],shape=:rectangular);
+Tspace = ApproxSpace(model, [Ω_fem, Ω_mk, Γb, Γr, Γf], Float64; dmax, method=[:FEM,:EFG,:FEM,:FEM,:FEM], technique =:LME, gamma=5.5,
+    Dirichlet_Entities=[Γb], Dirichlet_Values=[Tc],shape=:rectangular);
 
-fspace = ApproxSpace(model, [Ω_fem, Ω_mk], Float64; dmax, method=[:FEM,:EFG], technique =:MK,shape=:rectangular);
+fspace = ApproxSpace(model, [Ω_fem, Ω_mk], Float64; dmax, method=[:FEM,:EFG], technique =:LME, gamma=5.5,shape=:rectangular);
 
 const v = VectorField(0.0, 0.0, vc);
 
@@ -110,18 +110,3 @@ function Deferred_Piccard(Th, op, fspace, Tspace; tol=1e-6, max_iter=60)
     return Th_new, gₛh
 end
 Th2, gₛh = Deferred_Piccard(Th, op, fspace, Tspace; max_iter=150, tol=1e-5);
-
-Tvals=Get_Nodal_Values(Th2[dΩ_fem])
-Ω = Triangulation(model, "Domain");
-dΩ = IntegrationSet(Ω, ngpts);
-Tspaceᵢ = ApproxSpace(model, [Ω], Float64; dmax, method=:FEM, technique =:MK,shape=:spherical, cell_based=true);
-Thᵢ=FlexiFunction(Tvals,Tspaceᵢ,dΩ);
-@WeakForm aᵣ(δT, T) = ∫(δT * T)dΩ
-@WeakForm bᵣ(δT) = ∫(δT * Thᵢ)dΩ
-Tspaceᵣ = ApproxSpace(model, [Ω], Float64; dmax=1.35, method=:EFG, technique =:IMLS,shape=:rectangular, cell_based=true);
-opᵣ=Linear_Problem(aᵣ,bᵣ,Tspaceᵣ)
-Thᵣ = Solve(opᵣ,dΩ)
-Tvals2=Get_Nodal_Values(Thᵣ)
-Tspaceᵣ = ApproxSpace(model, [Ω], Float64; dmax=1.7*dmax, technique =:IMLS,shape=:spherical, cell_based=true);
-Thn=EFGInterpolatedField(Tvals2,Tspaceᵣ,model.x)
-Tf=Get_Interpolated_Values(Thn)

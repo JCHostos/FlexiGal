@@ -1,3 +1,4 @@
+#This approxspace combination leads to checkerboard pattern in pressure
 using FlexiGal
 Lx =5.0 
 Ly =1.0
@@ -31,7 +32,7 @@ dΩ = IntegrationSet(Ω, ngpts)
 dΩₚ= IntegrationSet(Ω, ng2)
 U₀(x) = VectorField(6*(x[2]-x[2]^2),0.0)
 No_Slip = VectorField(0.0, 0.0)
-Uspace = ApproxSpace(model, [Ω, Γ1, Γ2, Γ3], VectorField{2,Float64}; dmax, dm_map = dm_clustered, method=:EFG, technique=:LME, shape=:rectangular, Dirichlet_Boundaries=[Γ1, Γ2, Γ3],
+Uspace = ApproxSpace(model, [Ω, Γ1, Γ2, Γ3], VectorField{2,Float64}; dmax, dm_map = dm_clustered, method=:EFG, technique=:LME, shape=:rectangular, Dirichlet_Entities=[Γ1, Γ2, Γ3],
 Dirichlet_Values=[VectorField(1.0, 0.0), No_Slip, No_Slip])
 Pspace = ApproxSpace(model, [Ω], Float64; method=:FEM, order=0)
 X = MultiApproxSpace(Uspace, Pspace)

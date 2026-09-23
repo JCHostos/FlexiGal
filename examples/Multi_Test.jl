@@ -1,10 +1,11 @@
+#This approxspace combination leads to checkerboard pattern in pressure
 using FlexiGal
 Lx = 1.0
 Ly =1.0
 Domain = (Lx, Ly)
 nd=90
 Divisions = (nd, nd)
-dmax = 2.0
+dmax = 1.5
 function clustering(x)
     eps_val=1.0
     nx = 0.5+ 0.5 * tanh((2.0*x[1]-1.0)*eps_val)/tanh(eps_val)
@@ -29,7 +30,7 @@ dΩ = IntegrationSet(Ω, ngpts)
 dΩₚ= IntegrationSet(Ω, ng2)
 U₀(x) = VectorField((4*x[1]*(1-x[1]))^(1/8),0.0)
 No_Slip = VectorField(0.0, 0.0)
-Uspace = ApproxSpace(model, [Ω, Γ1, Γ2, Γ3, Γ4], VectorField{2,Float64}; dmax, method=:EFG, technique=:LME, shape=:rectangular, Dirichlet_Boundaries=[Γ1, Γ2, Γ3, Γ4],
+Uspace = ApproxSpace(model, [Ω, Γ1, Γ2, Γ3, Γ4], VectorField{2,Float64}; dmax, method=:EFG, technique=:LME, shape=:rectangular, Dirichlet_Entities=[Γ1, Γ2, Γ3, Γ4],
 Dirichlet_Values=[No_Slip, No_Slip, No_Slip, VectorField(1.0,0.0)], dm_map=dm_clustered)
 Pspace = ApproxSpace(model, [Ω], Float64; method=:FEM, order=0, constraint=:ZeroMean)
 X = MultiApproxSpace(Uspace, Pspace)

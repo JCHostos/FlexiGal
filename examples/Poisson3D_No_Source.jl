@@ -8,7 +8,7 @@ ngpts =3
 Γ1 = Triangulation(model, "Left")
 Γ2 = Triangulation(model, "Back")
 dΩ = IntegrationSet(Ω, ngpts)
-Tspace =  ApproxSpace(model, [Ω,Γ1,Γ2], Float64; dmax,method=:EFG,technique=:LME, Dirichlet_Boundaries=[Γ1,Γ2],Dirichlet_Values=[0.0,5.0]);
+Tspace =  ApproxSpace(model, [Ω,Γ1,Γ2], Float64; dmax,method=:EFG,technique=:LME, Dirichlet_Entities=[Γ1,Γ2],Dirichlet_Values=[0.0,5.0]);
 @WeakForm a(δT, T) = ∫(∇(δT) ⋅ ∇(T)) * dΩ
 @time op = Linear_Problem(a, Tspace);
 Th = Solve(op,dΩ);

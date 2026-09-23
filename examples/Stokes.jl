@@ -3,16 +3,15 @@ Lx = 1.0
 Ly =1.0
 Domain = (Lx, Ly)
 Divisions = (50, 50)
-dmax = 1.5;
-const Re = 500.0
+dmax = 2.0;
 function clustering(x)
-    eps_val=2.0
+    eps_val=0.01
     nx = 0.5 + 0.5 * tanh((2.0*x[1]-1.0)*eps_val)/tanh(eps_val)
     ny = 0.5 + 0.5 * tanh((2.0*x[2]-1.0)*eps_val)/tanh(eps_val)
     return [nx, ny]
 end
 function dm_clustered(x0)
-    eps_val=2.0
+    eps_val=0.01
     s1 = eps_val / (tanh(eps_val) * cosh((2.0*x0[1]-1.0)*eps_val)^2)
     s2 = eps_val / (tanh(eps_val) * cosh((2.0*x0[2]-1.0)*eps_val)^2)
     return [s1, s2]
@@ -29,8 +28,8 @@ dΩ = IntegrationSet(Ω, ngpts)
 dΩᵣ = IntegrationSet(Ω, ngpts_red)
 U₀(x) = VectorField(4*x[1]*(1-x[1]),0.0)
 No_Slip = VectorField(0.0, 0.0)
-Uspace = ApproxSpace(model, [Ω, Γ1, Γ2, Γ3, Γ4], VectorField{2,Float64}; dmax, method=:EFG, technique=:LME, shape=:rectangular, Dirichlet_Boundaries=[Γ1, Γ2, Γ3, Γ4],
+Uspace = ApproxSpace(model, [Ω, Γ1, Γ2, Γ3, Γ4], VectorField{2,Float64}; dmax, method=:EFG, technique=:IMLS, shape=:rectangular, Dirichlet_Entities=[Γ1, Γ2, Γ3, Γ4],
 Dirichlet_Values=[No_Slip, No_Slip, No_Slip, U₀], dm_map=dm_clustered)
-    @WeakForm a(δu, u) = ∫((∇(δu)⊙(∇(u)+∇(u)'))*(1/Re))dΩ + ∫((∇⋅δu) * 10 * (∇⋅u))dΩᵣ
+    @WeakForm a(δu, u) = ∫(∇(δu)⊙(∇(u)+∇(u)'))dΩ + ∫((∇⋅δu) *100.0* (∇⋅u))dΩᵣ
 @time op = Linear_Problem(a, Uspace);
-uh = Solve(op, dΩ);
+uh = Solve(op);

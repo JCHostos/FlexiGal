@@ -3,16 +3,16 @@ Lx = 1.0
 Ly =1.0
 Domain = (Lx, Ly)
 Divisions = (100, 100)
-dmax = 1.5;
-const Re = 500.0
+dmax = 2.0;
+const Re = 100.0
 function clustering(x)
-    eps_val=2.0
+    eps_val=0.0001
     nx = 0.5 + 0.5 * tanh((2.0*x[1]-1.0)*eps_val)/tanh(eps_val)
     ny = 0.5 + 0.5 * tanh((2.0*x[2]-1.0)*eps_val)/tanh(eps_val)
     return [nx, ny]
 end
 function dm_clustered(x0)
-    eps_val=2.0
+    eps_val=0.0001
     s1 = eps_val / (tanh(eps_val) * cosh((2.0*x0[1]-1.0)*eps_val)^2)
     s2 = eps_val / (tanh(eps_val) * cosh((2.0*x0[2]-1.0)*eps_val)^2)
     return [s1, s2]
@@ -29,11 +29,11 @@ dΩ = IntegrationSet(Ω, ngpts)
 dΩᵣ = IntegrationSet(Ω, ngpts_red)
 U₀(x) = VectorField(4*x[1]*(1-x[1]),0.0)
 No_Slip = VectorField(0.0, 0.0)
-Uspace = ApproxSpace(model, [Ω, Γ1, Γ2, Γ3, Γ4], VectorField{2,Float64}; dmax, method=:EFG, technique=:MK, shape=:rectangular, Dirichlet_Boundaries=[Γ1, Γ2, Γ3, Γ4],
+Uspace = ApproxSpace(model, [Ω, Γ1, Γ2, Γ3, Γ4], VectorField{2,Float64}; dmax=dmax, method=:EFG, technique=:IMLS, shape=:rectangular, Dirichlet_Entities=[Γ1, Γ2, Γ3, Γ4],
 Dirichlet_Values=[No_Slip, No_Slip, No_Slip, U₀], dm_map=dm_clustered)
 NL_Problem = @NL_WeakForm u begin
-    @WeakForm Jac(δu, du) = ∫((∇(δu)⊙(∇(du)+∇(du)'))*(1/Re) + δu⋅(∇(u)⋅du) + δu⋅(∇(du)⋅u))dΩ + ∫((∇⋅δu) * 10 * (∇⋅du))dΩᵣ
-    @WeakForm Res(δu)     = ∫((∇(δu)⊙(∇(u)+∇(u)'))*(1/Re) + δu⋅(∇(u)⋅u))dΩ + ∫((∇⋅δu) * 10 * (∇⋅u))dΩᵣ
+    @WeakForm Jac(δu, du) = ∫((∇(δu)⊙(∇(du)+∇(du)'))*(1/Re) + δu⋅(∇(u)⋅du) + δu⋅(∇(du)⋅u))dΩ + ∫((∇⋅δu) *5.0* (∇⋅du))dΩᵣ
+    @WeakForm Res(δu)     = ∫((∇(δu)⊙(∇(u)+∇(u)'))*(1/Re) + δu⋅(∇(u)⋅u))dΩ + ∫((∇⋅δu) *5.0* (∇⋅u))dΩᵣ
 end
 
 op = NonLinearOperator(NL_Problem, Uspace);

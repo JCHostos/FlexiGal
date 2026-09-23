@@ -1,6 +1,6 @@
 using FlexiGal
 using LinearAlgebra
-include("/home/hostos/Documents/FlexiGal/examples/Tetra_DC.jl");
+include("Tetra_DC.jl");
 model = create_model(xyz, conn);
 dmax = 1.35;
 ngpts = 4;
@@ -39,10 +39,10 @@ set_boundary_tag!(model, Front; name="Front");
 dΩ_fem = IntegrationSet(Ω_fem, ngpts); dΩ_mk = IntegrationSet(Ω_mk, ngpts);
 dΓr = IntegrationSet(Γr, ngpts-1); dΓf = IntegrationSet(Γf, ngpts-1);
 
-Tspace = ApproxSpace(model, [Ω_fem, Ω_mk, Γb, Γr, Γf], Float64; dmax=dmax, method=[:FEM,:FEM,:FEM,:FEM,:FEM], technique =:MK,
-    Dirichlet_Boundaries=[Γb], Dirichlet_Values=[Tc],shape=:spherical, cell_based=true);
+Tspace = ApproxSpace(model, [Ω_fem, Ω_mk, Γb, Γr, Γf], Float64; dmax=dmax, method=[:FEM,:FEM,:FEM,:FEM,:FEM], technique =:LME, gamma=5.5,
+    Dirichlet_Entities=[Γb], Dirichlet_Values=[Tc],shape=:spherical, cell_based=true);
 
-fspace = ApproxSpace(model, [Ω_fem, Ω_mk], Float64; dmax=dmax, method=[:FEM,:FEM], technique =:MK,shape=:spherical, cell_based=true);
+fspace = ApproxSpace(model, [Ω_fem, Ω_mk], Float64; dmax=dmax, method=[:FEM,:FEM], technique =:LME, gamma=5.5,shape=:spherical, cell_based=true);
 
 const v = VectorField(0.0, 0.0, vc);
 
@@ -98,25 +98,6 @@ function Deferred_Piccard(Th, op, fspace, Tspace; tol=1e-6, max_iter=60)
     end
     return Th_new, gₛh
 end
-#open("resultados_picard.txt", "w") do io
- #   redirect_stdout(io) do
-        #global 
-        Th2, gₛh = Deferred_Piccard(Th, op, fspace, Tspace; max_iter=150, tol=1e-5)
-  #  end
-#end
-#=
-Tvals=Get_Nodal_Values(Th2[dΩ_fem])
-Ω = Triangulation(model, "Domain");
-dΩ = IntegrationSet(Ω, ngpts);
-Tspaceᵢ = ApproxSpace(model, [Ω], Float64; dmax, method=:FEM, technique =:MK,shape=:spherical, cell_based=true);
-Thᵢ=FlexiFunction(Tvals,Tspaceᵢ,dΩ);
-@WeakForm aᵣ(δT, T) = ∫(δT * T)dΩ
-@WeakForm bᵣ(δT) = ∫(δT * Thᵢ)dΩ
-Tspaceᵣ = ApproxSpace(model, [Ω], Float64; dmax, method=:EFG, technique =:IMLS,shape=:spherical, cell_based=true);
-opᵣ=Linear_Problem(aᵣ,bᵣ,Tspaceᵣ)
-Thᵣ = Solve(opᵣ,dΩ)
-Tvals2=Get_Nodal_Values(Thᵣ)
-Tspaceᵣ = ApproxSpace(model, [Ω], Float64; dmax=1.7*dmax, technique =:IMLS,shape=:spherical, cell_based=true);
-Thn=EFGInterpolatedField(Tvals2,Tspaceᵣ,model.x)
-Tf=Get_Interpolated_Values(Thn)
-=#
+
+        Th2, gₛh = Deferred_Piccard(Th, op, fspace, Tspace; max_iter=150, tol=1e-5);
+ 
