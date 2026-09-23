@@ -8,7 +8,7 @@ include("WeakForm_Macro.jl")
 export create_model, BackgroundIntegration, Flexi_Space, Influence_Domains, FlexiFunction, ApproxSpace, Solve, build_space,
     Domain_Measure, Get_Point_Values, ∇, Internal_Product, Integrate, ∫, ⋅, ⊙, PointSet, δ, Bilinear_Assembler, Linear_Assembler, VectorField, Linear_Problem, plot_field, Assemble_Vector,
     Triangulation, IntegrationSet, Get_space_from_IntegrationSet, tr, Id, NL_Solver, @WeakForm, @NL_WeakForm, NonLinearOperator, Get_Nodal_Values, Get_Measures, build_space,
-    Reassemble_Vector!, set_tag!, MultiApproxSpace, evaluate_at_point,  extract_FlexiFunction, set_boundary_tag!, EFGInterpolatedField, Get_Interpolated_Values
+    Reassemble_Vector!, set_tag!, MultiApproxSpace, evaluate_at_point, get_entity_info, extract_FlexiFunction, set_boundary_tag!, EFGInterpolatedField, Get_Interpolated_Values
 struct Triangulation
     model::model
     tag::String

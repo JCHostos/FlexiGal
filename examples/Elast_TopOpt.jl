@@ -5,12 +5,12 @@ include("/home/usuario/Documentos/Julia/FlexiGal/src/subsolv.jl")
 Lx = 3.0
 Ly = 1.0
 Domain = (Lx, Ly)
-Divisions = (240, 80)
-dmax = 1.65
+Divisions = (150, 50)
+dmax = 1.35
 const E = 1.0;
 const ν = 0.3;
 const μₛ = E / (2 * (1 + ν));
-const λₛ = E * ν / (1 - ν^2);
+const λₛ = E*ν/((1+ν)*(1-2*ν));
 shift(x) = [x[1], x[2] - Ly / 2];
 p = 3;
 function Elastic_Moduli(λₛ, μₛ, p)
@@ -179,7 +179,7 @@ function Optimizer(Flexi_params, model, ρh_init::FlexiFunction, β, volfrac; η
 end
 
 # Bucle de continuación
-β_list = [0.0, 2.0, 4.0, 8.0, 16.0, 32.0,64.0]
+β_list = [0.0, 2.0, 4.0, 8.0, 16.0, 32.0]
 volfrac = 0.35
 count = length(β_list)
 History_list_β = Vector{Vector{Tuple{Int,Float64,Float64,Float64}}}(undef, count)
